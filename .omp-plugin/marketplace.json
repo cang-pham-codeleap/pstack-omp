@@ -1,0 +1,32 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "pstack-omp",
+  "owner": {
+    "name": "Canq Pham",
+    "url": "https://github.com/cang-pham-codeleap"
+  },
+  "metadata": {
+    "description": "pstack, ported to oh-my-pi. Rigorous agent workflows you can parallelize with confidence."
+  },
+  "plugins": [
+    {
+      "name": "pstack",
+      "description": "Rigorous agent workflows: poteto-mode, principles, review panels, unslop. Write less, higher quality code.",
+      "source": "./",
+      "version": "0.15.2",
+      "author": {
+        "name": "Lauren Tan"
+      },
+      "homepage": "https://github.com/cursor/plugins/tree/main/pstack",
+      "repository": "https://github.com/cursor/plugins",
+      "license": "MIT",
+      "category": "developer-tools",
+      "keywords": [
+        "pstack",
+        "poteto-mode",
+        "workflow",
+        "principles"
+      ]
+    }
+  ]
+}
