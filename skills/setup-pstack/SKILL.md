@@ -73,6 +73,8 @@ task:
     pstack-panel-4: "@pstack-panel-4"
 ```
 
+Inside `agentModelOverrides` the value is the quoted alias `"@pstack-<role>"`, never the selector. The selector is written once, in `modelRoles`; putting it in the override too makes that copy win, so a later model change silently fails.
+
 `<selector>` is a `provider/model-id` from step 1, carrying the level its probe accepted. Selectors are account-specific, so fill them from detection rather than copying an example.
 
 With no override entry and no `modelRoles` key, a pstack worker runs on the session model. Remove a role's override entry along with its `modelRoles` key to stop overriding that role.
@@ -88,7 +90,7 @@ A project's `.omp/config.yml` model roles override the global ones inside that p
 
 ### 6. Confirm
 
-Re-read `~/.omp/agent/config.yml` and show the user the final `modelRoles.pstack-*` values as they now stand in the file. Tell them the roles apply to new task dispatches, since dispatch reloads settings before it resolves an agent. Re-running this skill updates them.
+Re-read `~/.omp/agent/config.yml` and show the user the final `modelRoles.pstack-*` values as they now stand in the file. Confirm each `agentModelOverrides` value you wrote is the alias, and say so if one is not. Tell them the roles apply to new task dispatches, since dispatch reloads settings before it resolves an agent. Re-running this skill updates them.
 
 ### 7. Offer a verification skill (optional)
 
