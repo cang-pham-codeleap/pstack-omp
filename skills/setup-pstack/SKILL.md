@@ -46,7 +46,16 @@ Every selector written must have passed step 1's probe, suffix included. Write a
 
 ### 5. Write the roles
 
-Read `~/.omp/agent/config.yml`, replace only the seven `modelRoles.pstack-*` keys and the seven `task.agentModelOverrides` entries that point at them, and write the file back. Every other key stays exactly as it was, including every other `task.*` setting and override entry. Re-runs stay idempotent because you rewrite the same fourteen values.
+Read `~/.omp/agent/config.yml`, replace the seven `modelRoles.pstack-*` keys and the seven `task.agentModelOverrides` entries named `pstack-*`, and write the file back.
+
+Your write set is exactly those fourteen values. Everything else is out of scope, including anything that looks like it ought to be tidy:
+
+- Other `modelRoles` keys (`advisor`, `task`, `smol`, …) keep their values.
+- Other `agentModelOverrides` entries (`project-advisor`, …) keep theirs. Merge into the existing map, leave every sibling entry alone, and if `task.agentModelOverrides` is absent, create it holding the seven pstack entries and nothing more.
+- Every other top-level block (`providers`, `theme`, `task.eager`, `compaction`, `retry`, …) is untouched, formatting and key order included. Don't reorder, re-indent, or normalize the file.
+- Never copy a selector into an override entry for some *other* agent, and never add a `pstack-*` key beyond the seven.
+
+Re-runs stay idempotent because you rewrite the same fourteen values.
 
 Both blocks are needed. An agent installed from a marketplace does not get its frontmatter `model` applied, so the settings-level override is what actually routes it, and its alias resolves through `modelRoles`. That keeps each concrete selector in exactly one place.
 

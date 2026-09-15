@@ -24,7 +24,7 @@ Remaining triggers:
 - Contested design → the **interrogate** skill (multi-model adversarial) before shipping.
 - Nontrivial multi-step → write the throughput checkpoint (Feature step 3).
 - Any prose surface → the **unslop** skill. Your reply is a prose surface. Write it per **Writing the reply**. Agent-facing prose also follows the `manage_skill` tool's authoring rules (OMP's built-in for SKILL.md files).
-- Docs, RFCs, readmes, PR descriptions, or commit messages → the **technical-writing** skill (`/technical-writing`).
+- Docs, RFCs, readmes, PR descriptions, or commit messages → the **technical-writing** skill (`skill://technical-writing`).
 - Before commit → sweep the diff for slop: the **no-comments** skill over the comments, and dead weight deleted per **principle-subtract-before-you-add**.
 - Before review → the **no-comments** skill (`/skill:no-comments`).
 - Shipping UI / IDE / CLI → the matching surface: OMP's `browser` tool for browser, Electron, and web UIs, and a `hub` PTY process for CLIs and TUIs. For bug fixes, reproduce first on the same surface yourself. Hand to the user only under the narrow Bug fix step 1 exception.
@@ -88,7 +88,7 @@ Read the leaf skill in full for any principle you apply. Each entry names when i
 
 ## Subagents
 
-**Use `agent: "poteto-agent"` for any subagent you spawn inside a playbook step** (code-writing delegates, ad-hoc helpers). `/poteto-mode` and `poteto-agent` route through the same wrapper. Routed workflow skills (`how`, `why`, `interrogate`, `reflect`, `swarm`, `architect`, `arena`) name their own agent for diverse-model review. Respect what the skill prescribes, don't override to `poteto-agent`.
+**Use `agent: "poteto-agent"` for any subagent you spawn inside a playbook step** (code-writing delegates, ad-hoc helpers). `/skill:poteto-mode` and `poteto-agent` route through the same wrapper. Routed workflow skills (`how`, `why`, `interrogate`, `reflect`, `swarm`, `architect`, `arena`) name their own agent for diverse-model review. Respect what the skill prescribes, don't override to `poteto-agent`.
 
 **Defaults for every `task` call.** A `task` subagent runs in the background by default, so there is nothing to switch on. File pointers, not inlined context. One agent per role, because the `task` wire schema carries no per-item model. The seven role agents are the model carriers: `pstack-code`, `pstack-judgment`, `pstack-tooling`, and `pstack-panel-1` through `pstack-panel-4`. Code delegates tier by difficulty. The hardest changes (cross-cutting design, gnarly concurrency, subtle algorithms) go to your strongest judgment model (`pstack-judgment`), whether the task needs judgment on vague intent or is a precisely specified sequence of steps to execute to the letter. Trivial mechanical edits go to your fast code model (`pstack-code`). Each agent's model comes from the `pstack-*` entries `/skill:setup-pstack` writes into `~/.omp/agent/config.yml`, an override pointing each agent at its `modelRoles.pstack-<role>` alias. A role nobody set runs on the session model. That one mapping also sets the models for the routed skills (`how`, `why`, `arena`, `swarm`, `architect`, `interrogate`, `reflect`).
 

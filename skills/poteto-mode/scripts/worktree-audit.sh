@@ -22,10 +22,18 @@ prs=$(mktemp)
 gh pr list --author "@me" --state all --limit 1000 \
 	--json number,state,headRefName 2>/dev/null > "$prs" || echo "[]" > "$prs"
 
-# Transcripts dir: ~/.omp/agent/sessions/<slugified-repo-path>/ — one JSONL per
-# session, plus a sibling <session>/<AgentName>.jsonl per subagent.
+# Transcripts dir: ~/.omp/agent/sessions/<encoded-repo-path>/ — the repo path with
+# the home dir stripped and every "/" replaced by "-", prefixed with "-". One JSONL
+# per session, plus a sibling <session>/<AgentName>.jsonl per subagent. A repo
+# outside $HOME keeps its full path wrapped in dashes, so fall back to the newest
+# directory matching the repo's own name.
 slug="-$(printf '%s' "${main_wt#"$HOME"/}" | tr / -)"
 transcripts="$HOME/.omp/agent/sessions/$slug"
+if [ ! -d "$transcripts" ]; then
+	enc=$(printf '%s' "$main_wt" | tr / -)
+	transcripts=$(ls -d "$HOME/.omp/agent/sessions/"*"$enc-" "$HOME/.omp/agent/sessions/"*"$enc--" 2>/dev/null | head -1)
+fi
+[ -n "$transcripts" ] || transcripts="$HOME/.omp/agent/sessions/$slug"
 now=$(date +%s)
 
 printf "SIZE\tAGE\tMERGED\tDIRTY\tREMOTE\tPR\tLAST_CHAT\tBUCKET\tWORKTREE\n"
