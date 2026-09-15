@@ -1,11 +1,11 @@
 ---
 name: setup-pstack
-description: Configure which models pstack's role agents use and at what reasoning budget. Detects the models this machine can actually spawn and writes modelRoles.pstack-* into ~/.omp/agent/config.yml. Use for /setup-pstack, "configure pstack models", "pstack budget", or changing pstack's model choices.
+description: Configure which models pstack's role agents use and at what reasoning budget. Detects the models this machine can actually spawn and writes the pstack-* entries into ~/.omp/agent/config.yml. Use for /setup-pstack, "configure pstack models", "pstack budget", or changing pstack's model choices.
 ---
 
 # Setup pstack
 
-Write the `modelRoles.pstack-*` keys in `~/.omp/agent/config.yml`. pstack's role agents declare `model: "@pstack-<role>"`, so those keys decide which model every pstack worker runs on.
+Write the seven `pstack-*` entries in `~/.omp/agent/config.yml`: a `modelRoles` key holding the concrete selector, and a `task.agentModelOverrides` entry pointing the role agent at it. Those two keys decide which model each pstack worker runs on.
 
 ## Steps
 
