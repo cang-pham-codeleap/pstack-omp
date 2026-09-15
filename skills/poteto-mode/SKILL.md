@@ -26,7 +26,7 @@ Remaining triggers:
 - Any prose surface → the **unslop** skill. Your reply is a prose surface. Write it per **Writing the reply**. Agent-facing prose also follows the `manage_skill` tool's authoring rules (OMP's built-in for SKILL.md files).
 - Docs, RFCs, readmes, PR descriptions, or commit messages → the **technical-writing** skill (`skill://technical-writing`).
 - Before commit → sweep the diff for slop: the **no-comments** skill over the comments, and dead weight deleted per **principle-subtract-before-you-add**.
-- Before review → the **no-comments** skill (`/skill:no-comments`).
+- Before review → the **no-comments** skill (`skill://no-comments`).
 - Shipping UI / IDE / CLI → the matching surface: OMP's `browser` tool for browser, Electron, and web UIs, and a `hub` PTY process for CLIs and TUIs. For bug fixes, reproduce first on the same surface yourself. Hand to the user only under the narrow Bug fix step 1 exception.
 - Any PR-status request → the **Babysit** playbook (`playbooks/babysit.md`). That includes "babysit this", "get it green", "address the code-review-bot comments", and the commonest phrasing, "check on PR X" / "anything outstanding on X". Never triggered by merely opening a PR. Declare its mode before polling. The playbook's step 1 owns the request-to-mode mapping. Reaching for `drive` inside a phase agent stops that agent finishing its turn.
 - Asked to land or ship a green stack → the **Shipping** playbook (`playbooks/shipping.md`). Green is not safe. Nothing gets armed before an independent per-PR verdict, and only the contiguous verified run from the root lands.

@@ -47,7 +47,7 @@ For each reviewer:
 - prompt: includes `read-only: do not edit files`
 - model: from that agent's `modelRoles.pstack-panel-<n>` key in `~/.omp/agent/config.yml`, configured by the **setup-pstack** skill (`/skill:setup-pstack`)
 
-If a `pstack-*` role resolves to no model, run `/skill:setup-pstack` to point the role at an available model. Do not block the review on it.
+If a `pstack-*` role resolves to no model, ask the user to run `/skill:setup-pstack` and point the role at an available model. Do not block the review on it.
 
 Read `references/reviewer-prompt.md` and fill in the template with:
 1. The stated intent
