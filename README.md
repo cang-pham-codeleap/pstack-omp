@@ -32,7 +32,7 @@ two steps:
 
 new here? the [pstack guide](./docs/guide/README.md) walks you through a first real task, from setup and prompting through verification and overnight runs.
 
-that's it. the other skills are situational; the mode skill uses them for you as needed. out of the box the mode splits work by role: code delegates (feature, refactoring, bug fix, perf, hillclimb) spawn `pstack-code`, while the hardest changes, prose, and judgment spawn `pstack-judgment`. review panels fan out one `pstack-panel-1` through `pstack-panel-4` agent per configured entry. each role's model comes from `modelRoles.pstack-*` in `~/.omp/agent/config.yml`, falling through to your `task` role until you point it elsewhere, and [`/setup-pstack`](./skills/setup-pstack/SKILL.md) changes any of it.
+that's it. the other skills are situational; the mode skill uses them for you as needed. out of the box the mode splits work by role: code delegates (feature, refactoring, bug fix, perf, hillclimb) spawn `pstack-code`, while the hardest changes, prose, and judgment spawn `pstack-judgment`. review panels fan out one `pstack-panel-1` through `pstack-panel-4` agent per configured entry. each role's model comes from the seven `pstack-*` entries in `~/.omp/agent/config.yml`, and runs on your session model until you point it elsewhere. [`/setup-pstack`](./skills/setup-pstack/SKILL.md) changes any of it.
 
 ## usage
 
@@ -124,7 +124,7 @@ the full rules and playbooks live in [`skills/poteto-mode/SKILL.md`](./skills/po
 | [`/swarm`](./skills/swarm/SKILL.md) | you want N parallel workers across different slices or races, then one aggregated report. |
 | [`/interrogate`](./skills/interrogate/SKILL.md) | you have a diff and want several different models to try to break it, including a strict code-quality lens. |
 | [`/automate-me`](./skills/automate-me/SKILL.md) | you want your own `-mode` skill, drafted from how you've actually worked. |
-| [`/setup-pstack`](./skills/setup-pstack/SKILL.md) | you want to pick which models pstack uses per role. probes what this machine can spawn and merges `modelRoles.pstack-code`, `pstack-judgment`, `pstack-tooling`, and `pstack-panel-1..4` into `~/.omp/agent/config.yml`, leaving every other key untouched. |
+| [`/setup-pstack`](./skills/setup-pstack/SKILL.md) | you want to pick which models pstack uses per role. probes what this machine can spawn and merges the seven `pstack-code`, `pstack-judgment`, `pstack-tooling`, and `pstack-panel-1..4` entries into `~/.omp/agent/config.yml`'s `modelRoles` and `task.agentModelOverrides`, leaving every other key untouched. |
 | [`/reflect`](./skills/reflect/SKILL.md) | a long task landed and you want the recipe captured as a skill edit. |
 | [`/teach`](./skills/teach/SKILL.md) | you want to actually understand a change or subsystem, not just have it summarized. runs how + why and weaves one plain explanation, built up diagram by diagram. |
 | [`/tdd`](./skills/tdd/SKILL.md) | you're fixing a bug and there's a cheap local test path. write the failing test first, then the fix. |
@@ -250,7 +250,7 @@ omp already has a great plan mode which works great with pstack. but personally,
 
 type [`/automate-me`](./skills/automate-me/SKILL.md). it mines your recent transcripts, drafts a `<your-name>-mode` skill from how you've actually worked, and routes through pstack underneath. you keep pstack as the base and end up with your own routing skill alongside `poteto-mode`.
 
-models are configurable too. type [`/setup-pstack`](./skills/setup-pstack/SKILL.md). it probes the models this machine can actually spawn and merges `modelRoles.pstack-*` into `~/.omp/agent/config.yml`, mapping each role (code, judgment, tooling, the review panels) to a model without touching your other keys. roles you leave unset fall through to your `task` role, so you override only what you want.
+models are configurable too. type [`/setup-pstack`](./skills/setup-pstack/SKILL.md). it probes the models this machine can actually spawn and maps each role (code, judgment, tooling, the review panels) to one, writing the seven `pstack-*` entries into `~/.omp/agent/config.yml` without touching your other keys. a role runs on your session model until you set it, so you override only what you want.
 
 ## license
 

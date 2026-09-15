@@ -46,7 +46,9 @@ Every selector written must have passed step 1's probe, suffix included. Write a
 
 ### 5. Write the roles
 
-Read `~/.omp/agent/config.yml`, replace only the `modelRoles.pstack-*` keys, and write the file back. Every other key stays exactly as it was. Re-runs stay idempotent because you rewrite the same seven keys.
+Read `~/.omp/agent/config.yml`, replace only the seven `modelRoles.pstack-*` keys and the seven `task.agentModelOverrides` entries that point at them, and write the file back. Every other key stays exactly as it was, including every other `task.*` setting and override entry. Re-runs stay idempotent because you rewrite the same fourteen values.
+
+Both blocks are needed. An agent installed from a marketplace does not get its frontmatter `model` applied, so the settings-level override is what actually routes it, and its alias resolves through `modelRoles`. That keeps each concrete selector in exactly one place.
 
 ```yaml
 modelRoles:
@@ -59,11 +61,21 @@ modelRoles:
   pstack-panel-2: <selector>:xhigh
   pstack-panel-3: <selector>:xhigh
   pstack-panel-4: <selector>:xhigh
+task:
+  # every existing task setting and override entry is left untouched
+  agentModelOverrides:
+    pstack-code: "@pstack-code"
+    pstack-judgment: "@pstack-judgment"
+    pstack-tooling: "@pstack-tooling"
+    pstack-panel-1: "@pstack-panel-1"
+    pstack-panel-2: "@pstack-panel-2"
+    pstack-panel-3: "@pstack-panel-3"
+    pstack-panel-4: "@pstack-panel-4"
 ```
 
 `<selector>` is a `provider/model-id` from step 1, carrying the level its probe accepted. Selectors are account-specific, so fill them from detection rather than copying an example.
 
-A key left out hands that role to the `task` role, because every role agent declares `model: "@pstack-<role>, @task"` and the first entry that resolves wins. Deleting a key is how you stop overriding it.
+With no override entry and no `modelRoles` key, a pstack worker runs on the session model. Remove a role's override entry along with its `modelRoles` key to stop overriding that role.
 
 Role intents:
 
