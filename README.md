@@ -1,6 +1,6 @@
 # pstack
 
-> a community port of [cursor/plugins#pstack](https://github.com/cursor/plugins/tree/main/pstack) to [oh-my-pi](https://github.com/can1357/oh-my-pi) (`omp`). the skills, playbooks, principles, and prose are [poteto](https://x.com/poteto)'s work, MIT licensed. this port rewrites the cursor-specific mechanics into omp's: `task` role agents instead of `subagent_type` plus per-spawn models, `modelRoles.pstack-*` in `~/.omp/agent/config.yml` instead of a cursor rules file, and omp's `browser` / `hub` PTY tools instead of `cursor-team-kit`. [not shipped here](#not-shipped-here) lists what did not come across.
+> a community port of [cursor/plugins#pstack](https://github.com/cursor/plugins/tree/main/pstack) to [oh-my-pi](https://github.com/can1357/oh-my-pi) (`omp`). the skills, playbooks, principles, and prose are [poteto](https://x.com/poteto)'s work, MIT licensed. this port rewrites the cursor-specific mechanics into omp's: `task` role agents instead of `subagent_type` plus per-spawn models, `modelRoles.pstack-*` with matching `task.agentModelOverrides` entries in `~/.omp/agent/config.yml` instead of a cursor rules file, and omp's `browser` / `hub` PTY tools instead of `cursor-team-kit`. [not shipped here](#not-shipped-here) lists what did not come across.
 
 i'm [poteto](https://x.com/poteto). i'm not a president or ceo, but i've worked with millions of lines of code at Meta, Netflix, and Cursor. i'm also on the react core team where i help build and maintain react compiler.
 
