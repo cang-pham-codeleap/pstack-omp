@@ -14,7 +14,7 @@ Apply each criterion to every finding:
 
 - Durability: still true in 6 months once paths, SHAs, tool versions, and code shapes have changed.
 - Specificity: broad enough to apply across tasks, precise enough that a future agent recognizes when to use it. Reject vague platitudes ("write good code") and hyper-specific facts ("`<specific-skill-name>` has 175 tokens at limit 80").
-- Existing-skill-first: propose `new skill via manage_skill:` only when no existing skill is a real home, the pattern recurs, and the topic deserves its own skill.
+- Existing-skill-first: propose `new skill via manage_skill:` only when no existing skill is a real home (claude code: see `skills/poteto-mode/references/harness-surface.md` for the equivalent), the pattern recurs, and the topic deserves its own skill.
 - Convergence: findings echoed by 2+ reviewers carry higher confidence. Singletons must clear a higher bar on the other criteria.
 - Decision-changing: a future agent does something different because of the edit, not just reads more text.
 - Structural-mechanism check: route to Backlog when a lint rule, script, metadata flag, or runtime check already enforces the rule or could enforce it cheaply. Skill prose is for things mechanisms cannot enforce.

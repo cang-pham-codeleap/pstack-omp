@@ -29,7 +29,7 @@ Every entry is one JSON line. The opening user prompt is the first line with `"t
 
 ### 2. Spawn three reviewers in parallel
 
-One `task` batch, three items: judgment and divergent on `agent: "pstack-judgment"`, tooling on `agent: "pstack-tooling"`. The `task` tool spawns an agent with full tool access, so nothing is stripped. Reviewers need that access for context lookups (tickets, chat threads, observability traces referenced in the transcript). Their models come from `modelRoles.pstack-judgment` and `modelRoles.pstack-tooling` in `~/.omp/agent/config.yml`, configured by the **setup-pstack** skill (`/skill:setup-pstack`).
+One `task` batch, three items: judgment and divergent on `agent: "pstack-judgment"`, tooling on `agent: "pstack-tooling"`. The `task` tool spawns an agent with full tool access, so nothing is stripped. Reviewers need that access for context lookups (tickets, chat threads, observability traces referenced in the transcript). Their models come from the `pstack-judgment` and `pstack-tooling` roles (omp: `modelRoles.pstack-judgment` and `modelRoles.pstack-tooling` in `~/.omp/agent/config.yml`, set by `/skill:setup-pstack`; claude code: the `model:` fields in `agents/pstack-judgment.md` and `agents/pstack-tooling.md`).
 
 | Lens | Agent | Prompt template |
 |---|---|---|
@@ -41,7 +41,7 @@ Pass each template verbatim, substituting the transcript path or digest where ma
 
 ### 3. Synthesize
 
-One `task` item on `agent: "pstack-judgment"`. The synthesizer's quality check includes spot-verifying citations, which can require MCP access; the `task` tool spawns an agent with full tool access, so nothing is stripped. Its model comes from `modelRoles.pstack-judgment` in `~/.omp/agent/config.yml`, configured by the **setup-pstack** skill (`/skill:setup-pstack`). Use `references/synthesizer.md` verbatim, with each reviewer's full output inlined where marked. The synthesizer returns a structured Accepted / Rejected / Backlog list.
+One `task` item on `agent: "pstack-judgment"`. The synthesizer's quality check includes spot-verifying citations, which can require MCP access; the `task` tool spawns an agent with full tool access, so nothing is stripped. Its model comes from the `pstack-judgment` role (omp: `modelRoles.pstack-judgment` in `~/.omp/agent/config.yml`, set by `/skill:setup-pstack`; claude code: the `model:` field in `agents/pstack-judgment.md`). Use `references/synthesizer.md` verbatim, with each reviewer's full output inlined where marked. The synthesizer returns a structured Accepted / Rejected / Backlog list.
 
 ### 4. Structural enforcement check
 
@@ -56,7 +56,7 @@ Backlog items file to whatever devex / backlog tracker your team uses automatica
 For each approved Accepted item, follow the Routing field exactly:
 
 - Trivial existing-skill edit (a one-line bullet, a tightened sentence, a stale fact corrected): parent does directly.
-- Substantive existing-skill edit (a new section, a new pattern table, more than ~10 lines): hand to the `manage_skill` tool and run its draft / test / iterate loop.
+- Substantive existing-skill edit (a new section, a new pattern table, more than ~10 lines): hand to the `manage_skill` tool and run its draft / test / iterate loop. (claude code: see `skills/poteto-mode/references/harness-surface.md` for the equivalent)
 - `tune description: <skill path>` (the skill exists but didn't trigger when it should have): hand to `manage_skill` and run its description-optimization loop.
 - `new skill via manage_skill: <kebab-name>`: hand creation to `manage_skill`. Do not invent the shape ad hoc.
 

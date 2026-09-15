@@ -19,19 +19,19 @@ When in doubt, take the simple path.
 
 ## Step 2a. Explore (complex questions only)
 
-Decompose the question into 2 to 4 exploration angles, each a distinct slice of the subsystem. Spawn all explorers in a single `task` batch, one item per angle, each item on `agent: "pstack-code"` with `read-only: do not edit files` in its prompt. Their model comes from `modelRoles.pstack-code` in `~/.omp/agent/config.yml`, configured by the **setup-pstack** skill (`/skill:setup-pstack`).
+Decompose the question into 2 to 4 exploration angles, each a distinct slice of the subsystem. Spawn all explorers in a single `task` batch, one item per angle, each item on `agent: "pstack-code"` with `read-only: do not edit files` in its prompt. Their model comes from the `pstack-code` role (omp: `modelRoles.pstack-code` in `~/.omp/agent/config.yml`, set by `/skill:setup-pstack`; claude code: the `model:` field in `agents/pstack-code.md`).
 
 Each explorer gets the prompt in `references/explorer-prompt.md` with its angle filled in. Then go to Step 3.
 
 ## Step 2b. Direct Explain (simple questions)
 
-Spawn one `task` subagent that explores and explains in one pass, on `agent: "pstack-judgment"` with `read-only: do not edit files` in its prompt. Its model comes from `modelRoles.pstack-judgment` in `~/.omp/agent/config.yml`, configured by the **setup-pstack** skill (`/skill:setup-pstack`).
+Spawn one `task` subagent that explores and explains in one pass, on `agent: "pstack-judgment"` with `read-only: do not edit files` in its prompt. Its model comes from the `pstack-judgment` role (omp: `modelRoles.pstack-judgment` in `~/.omp/agent/config.yml`, set by `/skill:setup-pstack`; claude code: the `model:` field in `agents/pstack-judgment.md`).
 
 Build its prompt from `references/explainer-prompt.md` without the explorer-findings section. Go to Step 4.
 
 ## Step 3. Synthesize (complex questions only)
 
-Once all explorers have returned, spawn one `task` subagent to synthesize their findings into one explanation, on `agent: "pstack-code"` with `read-only: do not edit files` in its prompt. Its model comes from `modelRoles.pstack-code` in `~/.omp/agent/config.yml`, configured by the **setup-pstack** skill (`/skill:setup-pstack`).
+Once all explorers have returned, spawn one `task` subagent to synthesize their findings into one explanation, on `agent: "pstack-code"` with `read-only: do not edit files` in its prompt. Its model comes from the `pstack-code` role (omp: `modelRoles.pstack-code` in `~/.omp/agent/config.yml`, set by `/skill:setup-pstack`; claude code: the `model:` field in `agents/pstack-code.md`).
 
 Build its prompt from `references/explainer-prompt.md` with every explorer's findings filled in.
 
