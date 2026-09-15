@@ -77,7 +77,7 @@ Aim for a complete **coverage map**, not a minimal one. Document the null, don't
 
 Launch all matching investigators in a single `task` batch so they run concurrently. Don't ask one agent to cover multiple MCPs.
 
-Subagent config (each): one `task` item on `agent: "pstack-code"`. Its model comes from `modelRoles.pstack-code` in `~/.omp/agent/config.yml`, configured by the **setup-pstack** skill (`/skill:setup-pstack`). The `task` tool spawns an agent with full tool access, so nothing is stripped and MCP-backed investigators keep their MCPs. Investigators must still avoid writing anything.
+Subagent config (each): one `task` item on `agent: "pstack-code"`. Its model comes from the `pstack-code` role (omp: `modelRoles.pstack-code` in `~/.omp/agent/config.yml`, set by `/skill:setup-pstack`; claude code: the `model:` field in `agents/pstack-code.md`). The `task` tool spawns an agent with full tool access, so nothing is stripped and MCP-backed investigators keep their MCPs. Investigators must still avoid writing anything.
 
 Each investigator gets:
 1. The base prompt from `references/investigator-prompt.md`
@@ -117,7 +117,7 @@ If your scope assessment suggests a single-commit trivial target where the PR de
 
 ## Step 4. Synthesize
 
-Spawn one synthesizer subagent: a `task` item on `agent: "pstack-judgment"`. Its model comes from `modelRoles.pstack-judgment` in `~/.omp/agent/config.yml`, configured by the **setup-pstack** skill (`/skill:setup-pstack`). The synthesizer's quality check spot-verifies citations, which can require MCP access; the `task` tool spawns an agent with full tool access, so nothing is stripped.
+Spawn one synthesizer subagent: a `task` item on `agent: "pstack-judgment"`. Its model comes from the `pstack-judgment` role (omp: `modelRoles.pstack-judgment` in `~/.omp/agent/config.yml`, set by `/skill:setup-pstack`; claude code: the `model:` field in `agents/pstack-judgment.md`). The synthesizer's quality check spot-verifies citations, which can require MCP access; the `task` tool spawns an agent with full tool access, so nothing is stripped.
 
 The synthesizer gets:
 1. The investigator findings, including any null results and any categories skipped with justification

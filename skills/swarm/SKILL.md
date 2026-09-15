@@ -22,7 +22,7 @@ Open a todolist with one entry per phase before launching anything.
 1. State the done predicate and the artifact or report the swarm must return.
 2. Choose the shape. Partition into slices, race N workers on identical briefs, or mix both. For a race or mixed shape, declare `first pass`, `rank all`, or `best-of` before spawning.
 3. Set N from the user or derive it from the shape. N is total workers, not the concurrency limit — OMP runs at most 8 `task` subagents at once and queues the rest.
-4. Every worker runs on `agent: "pstack-code"` unless the shape assigns another role agent (a model race names one per arm). A worker's model comes from `modelRoles.<role>` in `~/.omp/agent/config.yml`, configured by the **setup-pstack** skill (`/skill:setup-pstack`). For a model race, name each arm's agent up front: `pstack-code`, `pstack-judgment`, and `pstack-panel-1` through `pstack-panel-4` are the distinct model carriers.
+4. Every worker runs on `agent: "pstack-code"` unless the shape assigns another role agent (a model race names one per arm). A worker's model comes from its role (omp: `modelRoles.<role>` in `~/.omp/agent/config.yml`, set by `/skill:setup-pstack`; claude code: the `model:` field in that role's `agents/<role>.md`). For a model race, name each arm's agent up front: `pstack-code`, `pstack-judgment`, and `pstack-panel-1` through `pstack-panel-4` are the distinct model carriers.
 5. Give each worker its own writable output when it writes.
 
 ## Phase B: Fan out

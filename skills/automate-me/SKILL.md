@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 A guided flow for turning the user's working conventions into a skill agents will follow. The output is one `-mode` skill tailored to them (e.g. `jay-mode`, `priya-mode`).
 
-This skill orchestrates three others: an inline mining pass (see step 1), the `manage_skill` tool (authoring), and the **unslop** skill (prose discipline). It sequences them. It doesn't replace them.
+This skill orchestrates three others: an inline mining pass (see step 1), the `manage_skill` tool (authoring), and the **unslop** skill (prose discipline). It sequences them. It doesn't replace them. On claude code there is no `manage_skill`: author with the file tools instead, at `~/.claude/skills/<handle>-mode/SKILL.md` for a personal skill or `.claude/skills/<handle>-mode/SKILL.md` for a project one.
 
 ## Flow
 
@@ -66,7 +66,7 @@ The **poteto-mode** skill shows the shape. Read it for granularity. Don't copy i
 
 Use the `manage_skill` tool to author a user-scoped skill, or the `write` tool for a project-scoped one. Placement:
 
-- Path: preserve an existing mode skill's category. A project-scoped mode skill is written with the `write` tool to `.omp/skills/<handle>-mode/SKILL.md`, or to `.omp/skills/<handle>/<handle>-mode/SKILL.md` when the repo has an established personal category for that handle. A user-scoped mode skill is authored with the `manage_skill` tool, which lands in `~/.omp/agent/managed-skills/<handle>-mode/SKILL.md`.
+- Path: preserve an existing mode skill's category. A project-scoped mode skill is written with the `write` tool to `.omp/skills/<handle>-mode/SKILL.md`, or to `.omp/skills/<handle>/<handle>-mode/SKILL.md` when the repo has an established personal category for that handle. A user-scoped mode skill is authored with the `manage_skill` tool, which lands in `~/.omp/agent/managed-skills/<handle>-mode/SKILL.md`. On claude code, write the same file with the `write` tool to `~/.claude/skills/<handle>-mode/SKILL.md`, or to `.claude/skills/<handle>-mode/SKILL.md` for a project-scoped one.
 - Handle: the user's first name or chosen identifier.
 - Frontmatter `description`: trigger on their name + `/<handle>-mode` + "work in their style", not on generic keywords like "write code" or "review PR".
 - Frontmatter formatting: follow `manage_skill`'s YAML rules. Keep `description` as one YAML scalar. Quote it or use `description: >-` with indented continuation lines when punctuation or wrapping requires it.

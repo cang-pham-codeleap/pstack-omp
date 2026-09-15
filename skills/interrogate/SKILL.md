@@ -45,7 +45,7 @@ Launch all reviewers in a single `task` batch, one reviewer per configured panel
 For each reviewer:
 - `agent`: the `pstack-panel-<n>` agent for its position, one `task` item per configured panel entry
 - prompt: includes `read-only: do not edit files`
-- model: from that agent's `modelRoles.pstack-panel-<n>` key in `~/.omp/agent/config.yml`, configured by the **setup-pstack** skill (`/skill:setup-pstack`)
+- model: from that agent's `pstack-panel-<n>` role (omp: `modelRoles.pstack-panel-<n>` in `~/.omp/agent/config.yml`, set by `/skill:setup-pstack`; claude code: the `model:` field in `agents/pstack-panel-<n>.md`)
 
 If a `pstack-*` role resolves to no model, ask the user to run `/skill:setup-pstack` and point the role at an available model. Do not block the review on it.
 

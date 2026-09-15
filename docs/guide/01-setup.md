@@ -21,7 +21,7 @@ Run:
 /skill:setup-pstack
 ```
 
-[`/skill:setup-pstack`](../../skills/setup-pstack/SKILL.md) detects the models you have access to, asks for a reasoning budget, shows you each role (code delegates, judgment, the review panels), and asks what you want. Answer the questions. It writes the seven `pstack-*` entries into `~/.omp/agent/config.yml`: a `modelRoles` key holding each role's model, and a `task.agentModelOverrides` entry pointing the role agent at it. Both are what every pstack skill reads.
+[`/skill:setup-pstack`](../../skills/setup-pstack/SKILL.md) detects the models you have access to, asks for a reasoning budget, shows you each role (code delegates, judgment, the review panels), and asks what you want. Answer the questions. It writes the seven `pstack-*` entries into `~/.omp/agent/config.yml`: a `modelRoles` key holding each role's model, and a `task.agentModelOverrides` entry pointing the role agent at it. Both are what every pstack skill reads. On claude code nothing is written, because each role's model is the `model:` field in its `agents/pstack-<role>.md` file; [claude code](../../README.md#claude-code) has the alias map.
 
 You only override what you care about. A role with no key in the config inherits your parent chat model. To change a role later, edit its key, or just run `/skill:setup-pstack` again.
 
