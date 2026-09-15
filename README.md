@@ -50,7 +50,7 @@ what differs between the two harnesses is where a role gets its model, and how a
 
 the aliases in `agents/` are claude code's vocabulary, not omp's. omp still routes each role from `modelRoles` through `task.agentModelOverrides`, and that override wins over the frontmatter, so both harnesses stay in sync on purpose: one role, one selector, one place to change it.
 
-skills, playbooks, and principles are identical on both. omp's `browser` / `hub` / `manage_skill` calls and `skill://` reads are the only tool names in the prose that claude code cannot resolve directly; where a playbook reaches for one, reach for the equivalent you have.
+skills, playbooks, and principles are identical on both. where a playbook names one of omp's tools (`browser`, `hub`, `manage_skill`), it points at [`skills/poteto-mode/references/harness-surface.md`](./skills/poteto-mode/references/harness-surface.md) for the equivalent, and names a skill rather than a `skill://` read. the mechanism changes with the harness; the bar does not.
 
 [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md) detects which harness it is running in, and on claude code it reports the alias map instead of writing `~/.omp/agent/config.yml`.
 
@@ -155,7 +155,7 @@ the full rules and playbooks live in [`skills/poteto-mode/SKILL.md`](./skills/po
 | [`/skill:swarm`](./skills/swarm/SKILL.md) | you want N parallel workers across different slices or races, then one aggregated report. |
 | [`/skill:interrogate`](./skills/interrogate/SKILL.md) | you have a diff and want several different models to try to break it, including a strict code-quality lens. |
 | [`/skill:automate-me`](./skills/automate-me/SKILL.md) | you want your own `-mode` skill, drafted from how you've actually worked. |
-| [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md) | you want to pick which models pstack uses per role. probes what this machine can spawn and merges the seven `pstack-code`, `pstack-judgment`, `pstack-tooling`, and `pstack-panel-1..4` entries into `~/.omp/agent/config.yml`'s `modelRoles` and `task.agentModelOverrides`, leaving every other key untouched. |
+| [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md) | you want to pick which models pstack uses per role. probes what this machine can spawn and merges the seven `pstack-code`, `pstack-judgment`, `pstack-tooling`, and `pstack-panel-1..4` entries into `~/.omp/agent/config.yml`'s `modelRoles` and `task.agentModelOverrides`, leaving every other key untouched. On claude code there is no config to write, so it reports the alias map the agent files carry. |
 | [`/skill:reflect`](./skills/reflect/SKILL.md) | a long task landed and you want the recipe captured as a skill edit. |
 | [`/skill:teach`](./skills/teach/SKILL.md) | you want to actually understand a change or subsystem, not just have it summarized. runs how + why and weaves one plain explanation, built up diagram by diagram. |
 | [`/skill:tdd`](./skills/tdd/SKILL.md) | you're fixing a bug and there's a cheap local test path. write the failing test first, then the fix. |
@@ -267,7 +267,7 @@ a few things `poteto-mode` references but doesn't bundle:
 
 - `benny`, the automation pack, triages slack issue reports and fixes confirmed bugs with real ui evidence, but it isn't bundled: it hard-depends on a hosted automations runtime and a project layout omp doesn't have.
 - `make-bot-ui` isn't bundled either: it targets hosted cloud-agent routines (`update_state`, `SendToUser`, hosted webhook urls).
-- there's no `deslop`, `control-cli`, or `control-ui` here. the slop sweep is pstack's own: [no-comments](./skills/no-comments/SKILL.md) over comments plus dead weight deleted per [principle-subtract-before-you-add](./skills/principle-subtract-before-you-add/SKILL.md). browser, Electron, and web work uses omp's `browser` tool, and CLIs and TUIs run as a `hub` pty process.
+- there's no `deslop`, `control-cli`, or `control-ui` here. the slop sweep is pstack's own: [no-comments](./skills/no-comments/SKILL.md) over comments plus dead weight deleted per [principle-subtract-before-you-add](./skills/principle-subtract-before-you-add/SKILL.md). browser, Electron, and web work uses omp's `browser` tool, and CLIs and TUIs run as a `hub` pty process. (claude code: see `skills/poteto-mode/references/harness-surface.md` for the equivalent)
 - authoring a skill is omp's `manage_skill` tool, not a bundled slash command.
 - the PR watcher in `skills/poteto-mode/scripts/watch-pr/` detects github-hosted review-automation comments by their github author logins, and the playbooks take an `origin` forge cli when `command -v origin` succeeds, defaulting to `gh`.
 

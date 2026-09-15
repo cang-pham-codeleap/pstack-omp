@@ -85,7 +85,7 @@ That's the whole prompt. [`/skill:bro`](../../skills/bro/SKILL.md) restates the 
 - **Parallel agents in one worktree.** They overwrite each other and the diff becomes archaeology. Say "own worktree per attempt" and the isolation is free.
 - **Using `/skill:arena` for coverage.** `/skill:arena` repeats one design or code brief, then picks a base and grafts the best parts. `/skill:swarm` partitions slices or declared race arms and aggregates one report.
 - **Accepting every review comment.** Bots and humans both file real catches and noise in one list. `/skill:interrogate` sorts findings into act-on and dismissed buckets with reasons, and you can override either way.
-- **Forgetting a role's key.** Leave `modelRoles.pstack-*` unset and the agent silently inherits the parent chat model. [Setup](./01-setup.md) covers the roles.
+- **Forgetting a role's key.** On omp, leave `modelRoles.pstack-*` unset and the agent silently inherits the parent chat model. On claude code every role already has one: the `model:` field in its [`agents/`](../../agents) file. [Setup](./01-setup.md) covers the omp side, and [claude code](../../README.md#claude-code) the alias map.
 - **Reporting success off a green build.** A build proves it compiles. Ask for the real command, flow, stored value, or profile, and expect the evidence in the reply.
 - **Writing a `SKILL.md` freehand.** Route it through the [Authoring or modifying a skill playbook](../../skills/poteto-mode/playbooks/authoring-a-skill.md) so validation and review happen.
 

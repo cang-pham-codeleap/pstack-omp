@@ -8,7 +8,7 @@ poteto-mode is one person's style. The machinery underneath, playbooks, routing,
 /skill:automate-me
 ```
 
-You don't describe your style, because [`/skill:automate-me`](../../skills/automate-me/SKILL.md) reads it out of your history. It mines your recent session transcripts in the active workspace (`~/.omp/agent/sessions/<encoded-cwd>/`) for repeated preferences, in how you like replies, delegation, verification, code, prose, and process, then asks you which patterns are really you. It drafts `~/.omp/agent/managed-skills/<your-name>-mode/SKILL.md` through the `manage_skill` tool, runs the draft through [`/skill:unslop`](../../skills/unslop/SKILL.md), and opens a PR from a worktree so you review it like any other change.
+You don't describe your style, because [`/skill:automate-me`](../../skills/automate-me/SKILL.md) reads it out of your history. It mines your recent session transcripts in the active workspace (`~/.omp/agent/sessions/<encoded-cwd>/`) for repeated preferences, in how you like replies, delegation, verification, code, prose, and process, then asks you which patterns are really you. It drafts `~/.omp/agent/managed-skills/<your-name>-mode/SKILL.md` through the `manage_skill` tool (on claude code the draft is written with the file tools to `~/.claude/skills/<your-name>-mode/SKILL.md`, or to `.claude/skills/<your-name>-mode/SKILL.md` for a project-scoped one), runs the draft through [`/skill:unslop`](../../skills/unslop/SKILL.md), and opens a PR from a worktree so you review it like any other change.
 
 Run it again whenever your habits drift:
 
