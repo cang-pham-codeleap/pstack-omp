@@ -2,6 +2,8 @@
 
 > a community port of [cursor/plugins#pstack](https://github.com/cursor/plugins/tree/main/pstack) to [oh-my-pi](https://github.com/can1357/oh-my-pi) (`omp`). the skills, playbooks, principles, and prose are [poteto](https://x.com/poteto)'s work, MIT licensed. this port rewrites the cursor-specific mechanics into omp's: `task` role agents instead of `subagent_type` plus per-spawn models, `modelRoles.pstack-*` with matching `task.agentModelOverrides` entries in `~/.omp/agent/config.yml` instead of a cursor rules file, and omp's `browser` / `hub` PTY tools instead of `cursor-team-kit`. [not shipped here](#not-shipped-here) lists what did not come across.
 
+it installs into claude code too: the tree is already claude code's plugin format, and omp reads claude plugin roots, so the same copy can serve both harnesses. [claude code](#claude-code) covers what differs.
+
 i'm [poteto](https://x.com/poteto). i'm not a president or ceo, but i've worked with millions of lines of code at Meta, Netflix, and Cursor. i'm also on the react core team where i help build and maintain react compiler.
 
 there's a growing sense that ai writes too much slop code. i agree. i don't want to ship like a team of twenty slop artists. throughput without quality is not a goal i aspire to. if you want to go fast, go deep first. 
@@ -16,6 +18,8 @@ fork it. improve it. make it yours. PRs are welcome!
 
 ## install
 
+oh-my-pi:
+
 ```bash
 omp plugin marketplace add cang-pham-codeleap/pstack-omp
 omp plugin install --scope user pstack@pstack-omp
@@ -23,16 +27,43 @@ omp plugin install --scope user pstack@pstack-omp
 
 discovery happens at session start, so start a new session after installing or run `/reload-plugins` in the one you're in. skill commands are `/skill:<name>` when `skills.enableSkillCommands` is on; reading `skill://<name>` works either way.
 
+claude code:
+
+```bash
+claude plugin marketplace add cang-pham-codeleap/pstack-omp
+claude plugin install pstack@pstack-omp
+```
+
+skills land under the plugin namespace, so you invoke `/pstack:poteto-mode` rather than `/skill:poteto-mode`. read [claude code](#claude-code) before you rely on the role models.
+
+## claude code
+
+what differs between the two harnesses is where a role gets its model, and how a skill is named.
+
+| mechanic | omp | claude code |
+|---|---|---|
+| role → model | the seven `pstack-*` entries in `~/.omp/agent/config.yml`, written by [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md) | the `model:` field in [`agents/`](./agents), one per file |
+| what a panel spans | whichever four families your account carries, chosen at setup | `opus`, `sonnet`, `haiku`, and `fable`, one per panel seat, so the four seats still span four families |
+| changing a model | rerun setup; it rewrites both blocks and leaves your other keys alone | `/model` moves the main thread and every `inherit` agent. `CLAUDE_CODE_SUBAGENT_MODEL` sets a default for agents that name no model, and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` overrides the per-agent field too |
+| invoking a skill | `/skill:<name>`, or read `skill://<name>` | `/pstack:<name>` |
+| tool surface | `browser` for uis, `hub` ptys for clis, `manage_skill` for authoring | the equivalents claude code ships |
+
+the aliases in `agents/` are claude code's vocabulary, not omp's. omp still routes each role from `modelRoles` through `task.agentModelOverrides`, and that override wins over the frontmatter, so both harnesses stay in sync on purpose: one role, one selector, one place to change it.
+
+skills, playbooks, and principles are identical on both. omp's `browser` / `hub` / `manage_skill` calls and `skill://` reads are the only tool names in the prose that claude code cannot resolve directly; where a playbook reaches for one, reach for the equivalent you have.
+
+[`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md) detects which harness it is running in, and on claude code it reports the alias map instead of writing `~/.omp/agent/config.yml`.
+
 ## get started
 
 two steps:
 
-1. run [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md), pick a reasoning budget, and choose which models you want.
+1. on omp, run [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md), pick a reasoning budget, and choose which models you want. on claude code the role models are already pinned in [`agents/`](./agents), so go straight to step 2.
 2. use [`/skill:poteto-mode`](./skills/poteto-mode/SKILL.md) whenever you're doing anything that requires rigor.
 
 new here? the [pstack guide](./docs/guide/README.md) walks you through a first real task, from setup and prompting through verification and overnight runs.
 
-that's it. the other skills are situational; the mode skill uses them for you as needed. out of the box the mode splits work by role: code delegates (feature, refactoring, bug fix, perf, hillclimb) spawn `pstack-code`, while the hardest changes, prose, and judgment spawn `pstack-judgment`. review panels fan out one `pstack-panel-1` through `pstack-panel-4` agent per configured entry. each role's model comes from the seven `pstack-*` entries in `~/.omp/agent/config.yml`, and runs on your session model until you point it elsewhere. [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md) changes any of it.
+that's it. the other skills are situational; the mode skill uses them for you as needed. out of the box the mode splits work by role: code delegates (feature, refactoring, bug fix, perf, hillclimb) spawn `pstack-code`, while the hardest changes, prose, and judgment spawn `pstack-judgment`. review panels fan out one `pstack-panel-1` through `pstack-panel-4` agent per configured entry. on omp, each role's model comes from the seven `pstack-*` entries in `~/.omp/agent/config.yml`, and runs on your session model until you point it elsewhere. [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md) changes any of it. on claude code the same four panel seats are pinned to four different families in [`agents/`](./agents).
 
 ## usage
 
@@ -250,7 +281,7 @@ omp already has a great plan mode which works great with pstack. but personally,
 
 type [`/skill:automate-me`](./skills/automate-me/SKILL.md). it mines your recent transcripts, drafts a `<your-name>-mode` skill from how you've actually worked, and routes through pstack underneath. you keep pstack as the base and end up with your own routing skill alongside `poteto-mode`.
 
-models are configurable too. type [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md). it probes the models this machine can actually spawn and maps each role (code, judgment, tooling, the review panels) to one, writing the seven `pstack-*` entries into `~/.omp/agent/config.yml` without touching your other keys. a role runs on your session model until you set it, so you override only what you want.
+on omp, models are configurable too. type [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md). it probes the models this machine can actually spawn and maps each role (code, judgment, tooling, the review panels) to one, writing the seven `pstack-*` entries into `~/.omp/agent/config.yml` without touching your other keys. a role runs on your session model until you set it, so you override only what you want. run it on claude code and it reports the alias map instead, since there is no settings file to write.
 
 ## license
 
