@@ -1,0 +1,302 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Poteto Mode Execution & Verification Lifecycle",
+    "output": "artifacts/poteto-mode-flow.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "playbook-todo-binding",
+        "label": "Playbook & Verbatim Todo Binding",
+        "focus": ["request", "classify", "todo_sync", "adhoc_gate"],
+        "note": "Requests are mapped to playbooks and initialized as verbatim todo items rather than default LLM checklists."
+      },
+      {
+        "id": "governed-execution",
+        "label": "Governed Execution & Delegation",
+        "focus": ["todo_sync", "principles", "execute_step", "delegate_tier", "surface_verify"],
+        "note": "Execution enforces leaf principles, routes through specialized skills, and delegates to tiered model roles."
+      },
+      {
+        "id": "verification-and-ship",
+        "label": "Surface Verification & Ship",
+        "focus": ["surface_verify", "slop_sweep", "open_pr"],
+        "note": "Work is verified on its real control surface before sweeping slop and opening a pull request."
+      }
+    ]
+  },
+  "lanes": [
+    { "id": "intake_lane", "label": "Intake & Todo Contract" },
+    { "id": "execution_lane", "label": "Governed Execution" },
+    { "id": "verification_lane", "label": "Verification & Delivery" },
+    { "id": "exception_lane", "label": "Audit & Review Gates", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "p_intake", "label": "Intake & Todo Binding", "fromCol": 0, "toCol": 1 },
+    { "id": "p_exec", "label": "Governed Execution", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "p_verify", "label": "Surface Verification & Ship", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "groups": [
+    {
+      "id": "grp_todo",
+      "label": "Verbatim todo steps",
+      "lane": "intake_lane",
+      "fromCol": 2,
+      "toCol": 2
+    },
+    {
+      "id": "grp_verify",
+      "label": "Real control surface",
+      "lane": "verification_lane",
+      "fromCol": 4,
+      "toCol": 4
+    }
+  ],
+  "mainPath": [
+    "request",
+    "classify",
+    "todo_sync",
+    "execute_step",
+    "delegate_tier",
+    "surface_verify",
+    "slop_sweep",
+    "open_pr"
+  ],
+  "nodes": [
+    {
+      "id": "request",
+      "lane": "intake_lane",
+      "col": 0,
+      "type": "frontend",
+      "label": "Task Intake",
+      "width": 110
+    },
+    {
+      "id": "adhoc_gate",
+      "lane": "exception_lane",
+      "col": 0,
+      "type": "external",
+      "label": "Custom Plan",
+      "tag": "figure-it-out",
+      "width": 110
+    },
+    {
+      "id": "classify",
+      "lane": "intake_lane",
+      "col": 1,
+      "type": "backend",
+      "label": "Match Playbook",
+      "tag": "23 catalogs",
+      "width": 120
+    },
+    {
+      "id": "todo_sync",
+      "lane": "intake_lane",
+      "col": 2,
+      "type": "database",
+      "label": "Init Todo",
+      "tag": "verbatim",
+      "width": 110
+    },
+    {
+      "id": "principles",
+      "lane": "exception_lane",
+      "col": 2,
+      "type": "security",
+      "label": "Principles",
+      "tag": "23 principles",
+      "width": 110
+    },
+    {
+      "id": "execute_step",
+      "lane": "execution_lane",
+      "col": 2,
+      "type": "backend",
+      "label": "Execute Step",
+      "tag": "in-progress",
+      "width": 110
+    },
+    {
+      "id": "delegate_tier",
+      "lane": "execution_lane",
+      "col": 3,
+      "type": "messagebus",
+      "label": "Delegate Tier",
+      "tag": "pstack-code",
+      "width": 115
+    },
+    {
+      "id": "irreversible_gate",
+      "lane": "exception_lane",
+      "col": 3,
+      "type": "security",
+      "label": "Irreversible",
+      "tag": "approval gate",
+      "width": 115
+    },
+    {
+      "id": "surface_verify",
+      "lane": "verification_lane",
+      "col": 4,
+      "type": "backend",
+      "label": "Verify Surface",
+      "tag": "prove-it-works",
+      "width": 115
+    },
+    {
+      "id": "repro_failed",
+      "lane": "verification_lane",
+      "col": 3,
+      "type": "backend",
+      "label": "Verify Failed",
+      "tag": "reproduce",
+      "yOffset": 80,
+      "width": 115
+    },
+    {
+      "id": "slop_sweep",
+      "lane": "verification_lane",
+      "col": 5,
+      "type": "security",
+      "label": "Clean Slop",
+      "tag": "unslop",
+      "width": 110
+    },
+    {
+      "id": "open_pr",
+      "lane": "verification_lane",
+      "col": 5,
+      "type": "frontend",
+      "label": "Open PR & Report",
+      "tag": "done",
+      "yOffset": 80,
+      "width": 125
+    }
+  ],
+  "edges": [
+    {
+      "from": "request",
+      "to": "classify",
+      "label": "parse intent"
+    },
+    {
+      "from": "request",
+      "to": "adhoc_gate",
+      "label": "no standard match",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "from": "adhoc_gate",
+      "to": "todo_sync",
+      "label": "bespoke playbook",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "from": "classify",
+      "to": "todo_sync",
+      "label": "copy steps verbatim"
+    },
+    {
+      "from": "todo_sync",
+      "to": "execute_step",
+      "label": "promote task"
+    },
+    {
+      "from": "execute_step",
+      "to": "principles",
+      "label": "read leaf skill",
+      "role": "branch"
+    },
+    {
+      "from": "principles",
+      "to": "execute_step",
+      "label": "apply rule",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "from": "execute_step",
+      "to": "delegate_tier",
+      "label": "spawn role agent"
+    },
+    {
+      "from": "delegate_tier",
+      "to": "irreversible_gate",
+      "label": "check autonomy",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "from": "irreversible_gate",
+      "to": "delegate_tier",
+      "label": "confirmed",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "from": "delegate_tier",
+      "to": "surface_verify",
+      "label": "receive diff"
+    },
+    {
+      "from": "surface_verify",
+      "to": "repro_failed",
+      "label": "check failed",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "from": "repro_failed",
+      "to": "execute_step",
+      "label": "debug root cause",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "from": "surface_verify",
+      "to": "slop_sweep",
+      "label": "evidence passed"
+    },
+    {
+      "from": "slop_sweep",
+      "to": "open_pr",
+      "label": "clean diff"
+    }
+  ],
+  "semanticChecks": {
+    "allowedRoots": ["request"],
+    "allowedTerminals": ["open_pr"]
+  },
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Verbatim Playbook & Todo Binding",
+      "items": [
+        "Playbook steps copy verbatim into todo tool before execution",
+        "Skips stay explicit with 'skip: <reason>' rather than disappearing",
+        "Non-standard or cross-cutting tasks route to figure-it-out"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Strict Task Verification on Surface",
+      "items": [
+        "Unit test green alone is insufficient without real artifact verification",
+        "Web and Electron UIs drive through the browser tool",
+        "CLIs and TUIs run via interactive hub PTY processes"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Tiered Delegation & Model Roles",
+      "items": [
+        "Code tasks delegate to pstack-code or pstack-judgment roles",
+        "Session owner reviews all diffs and sweeps slop with no-comments",
+        "Irreversible actions pause for user confirmation"
+      ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 ---
 name: pstack-panel-3
-description: pstack review panel seat 3. Serves arena runners, architect runners, and interrogate reviewers when the configured panel entry is position 3. Its model comes from the pstack-panel-3 role, falling back to the task role.
+description: pstack review panel seat 3. Serves arena runners, architect runners, and interrogate reviewers when the configured panel entry is position 3. Its model comes from the `pstack-panel-3` role in `~/.omp/agent/config.yml`, written by `/skill:setup-pstack`. A role nobody set runs on the session model.
 model: "@pstack-panel-3, @task"
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: pstack-panel-4
-description: pstack review panel seat 4. Serves arena runners, architect runners, and interrogate reviewers when the configured panel entry is position 4. Its model comes from the pstack-panel-4 role, falling back to the task role.
+description: pstack review panel seat 4. Serves arena runners, architect runners, and interrogate reviewers when the configured panel entry is position 4. Its model comes from the `pstack-panel-4` role in `~/.omp/agent/config.yml`, written by `/skill:setup-pstack`. A role nobody set runs on the session model.
 model: "@pstack-panel-4, @task"
 ---
 

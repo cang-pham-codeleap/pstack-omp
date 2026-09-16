@@ -1,6 +1,6 @@
 ---
 name: pstack-tooling
-description: pstack tooling reviewer. Serves the reflect tooling lens over an agent session's transcripts. Its model comes from the pstack-tooling role, falling back to the task role.
+description: pstack tooling reviewer. Serves the reflect tooling lens over an agent session's transcripts. Its model comes from the `pstack-tooling` role in `~/.omp/agent/config.yml`, written by `/skill:setup-pstack`. A role nobody set runs on the session model.
 model: "@pstack-tooling, @task"
 ---
 
