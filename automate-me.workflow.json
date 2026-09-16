@@ -1,0 +1,306 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Automate-Me Workflow",
+    "quality_profile": "showcase",
+    "output": "automate-me-architecture.html",
+    "views": [
+      {
+        "id": "mining-loop",
+        "label": "Session Mining Path",
+        "focus": [
+          "user",
+          "cli",
+          "sessions",
+          "miners",
+          "cluster"
+        ],
+        "note": "Workspace session mining and cross-slice pattern clustering."
+      },
+      {
+        "id": "authoring-gate",
+        "label": "Clarification and Authoring",
+        "focus": [
+          "cluster",
+          "ask_gate",
+          "authoring",
+          "unslop"
+        ],
+        "note": "Interactive user clarification followed by managed drafting and unslop quality check."
+      },
+      {
+        "id": "landing-path",
+        "label": "Storage and Landing",
+        "focus": [
+          "authoring",
+          "skill_file",
+          "git_pr"
+        ],
+        "note": "SKILL.md file emission and worktree PR creation."
+      }
+    ],
+    "viewBox": [
+      1096,
+      684
+    ]
+  },
+  "lanes": [
+    {
+      "id": "ui",
+      "label": "User Interaction"
+    },
+    {
+      "id": "orchestration",
+      "label": "Orchestrator & Synthesis"
+    },
+    {
+      "id": "mining",
+      "label": "Evidence & Mining Swarm"
+    },
+    {
+      "id": "quality",
+      "label": "Quality Gate & Storage"
+    }
+  ],
+  "phases": [
+    {
+      "id": "intake_discovery",
+      "label": "Discovery & Check",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "evidence_mining",
+      "label": "History Mining",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "synthesis_authoring",
+      "label": "Synthesis & Authoring",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "history_swarm",
+      "label": "Mining Swarm",
+      "lane": "mining",
+      "fromCol": 1,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "quality_pipeline",
+      "label": "Draft Quality Pipeline",
+      "lane": "quality",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "security"
+    }
+  ],
+  "mainPath": [
+    "user",
+    "cli",
+    "sessions",
+    "miners",
+    "cluster",
+    "authoring",
+    "unslop",
+    "skill_file"
+  ],
+  "nodes": [
+    {
+      "id": "user",
+      "lane": "ui",
+      "col": 0,
+      "type": "external",
+      "label": "Developer",
+      "sublabel": "invoke automate-me",
+      "width": 136
+    },
+    {
+      "id": "ask_gate",
+      "lane": "ui",
+      "col": 4,
+      "type": "frontend",
+      "label": "Ask Dialog Gate",
+      "sublabel": "clarify missing intent",
+      "tag": "Step 2 Multi-choice",
+      "width": 140
+    },
+    {
+      "id": "cli",
+      "lane": "orchestration",
+      "col": 1,
+      "type": "frontend",
+      "label": "Flow Controller",
+      "sublabel": "inspect existing skill",
+      "tag": "Step 0 Check",
+      "width": 136
+    },
+    {
+      "id": "cluster",
+      "lane": "orchestration",
+      "col": 3,
+      "type": "backend",
+      "label": "Signal Clusterer",
+      "sublabel": "consensus 2+ matches",
+      "tag": "Step 3 Synthesis",
+      "width": 140
+    },
+    {
+      "id": "sessions",
+      "lane": "mining",
+      "col": 1,
+      "type": "database",
+      "label": "Session Store",
+      "sublabel": "workspace JSONL logs",
+      "tag": "~/.omp/agent/sessions",
+      "width": 140
+    },
+    {
+      "id": "miners",
+      "lane": "mining",
+      "col": 2,
+      "type": "backend",
+      "label": "Mining Swarm",
+      "sublabel": "pstack-judgment slices",
+      "tag": "Step 1 Signal mining",
+      "width": 140
+    },
+    {
+      "id": "authoring",
+      "lane": "quality",
+      "col": 4,
+      "type": "backend",
+      "label": "Skill Authoring",
+      "sublabel": "manage_skill / write",
+      "tag": "Step 4 Draft",
+      "width": 140
+    },
+    {
+      "id": "unslop",
+      "lane": "quality",
+      "col": 5,
+      "type": "security",
+      "label": "Unslop Linter",
+      "sublabel": "prose style compliance",
+      "tag": "Step 5 AI audit",
+      "width": 140
+    },
+    {
+      "id": "skill_file",
+      "lane": "orchestration",
+      "col": 5,
+      "type": "database",
+      "label": "Managed Skills",
+      "sublabel": "new -mode/SKILL.md",
+      "tag": "target store",
+      "width": 140
+    },
+    {
+      "id": "git_pr",
+      "lane": "ui",
+      "col": 5,
+      "type": "cloud",
+      "label": "Worktree & PR",
+      "sublabel": "review and landing",
+      "tag": "Step 6 Land",
+      "width": 136
+    }
+  ],
+  "edges": [
+    {
+      "id": "user-to-cli",
+      "from": "user",
+      "to": "cli",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cli-to-sessions",
+      "from": "cli",
+      "to": "sessions",
+      "label": "resolve path",
+      "variant": "default"
+    },
+    {
+      "id": "sessions-to-miners",
+      "from": "sessions",
+      "to": "miners",
+      "label": "read slices",
+      "variant": "emphasis"
+    },
+    {
+      "id": "miners-to-cluster",
+      "from": "miners",
+      "to": "cluster",
+      "label": "consensus signals",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cluster-to-ask",
+      "from": "cluster",
+      "to": "ask_gate",
+      "label": "prompt intent",
+      "variant": "dashed"
+    },
+    {
+      "id": "ask-to-authoring",
+      "from": "ask_gate",
+      "to": "authoring",
+      "label": "clarified prefs",
+      "variant": "default"
+    },
+    {
+      "id": "cluster-to-authoring",
+      "from": "cluster",
+      "to": "authoring",
+      "label": "mined sections",
+      "variant": "emphasis"
+    },
+    {
+      "id": "authoring-to-unslop",
+      "from": "authoring",
+      "to": "unslop",
+      "label": "audit prose",
+      "variant": "security"
+    },
+    {
+      "id": "unslop-to-file",
+      "from": "unslop",
+      "to": "skill_file",
+      "label": "write skill",
+      "variant": "emphasis"
+    },
+    {
+      "id": "file-to-pr",
+      "from": "skill_file",
+      "to": "git_pr",
+      "label": "open PR",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "History Mining",
+      "items": [
+        "Workspace-scoped logs avoid leakage",
+        "Subagents mine slices in parallel"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Synthesis & Delivery",
+      "items": [
+        "Targeted ask dialog clarifies intent",
+        "Unslop pass audits prose before PR"
+      ]
+    }
+  ]
+}

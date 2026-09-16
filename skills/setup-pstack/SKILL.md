@@ -1,11 +1,11 @@
 ---
 name: setup-pstack
-description: Configure which models pstack's role agents use and at what reasoning budget. Detects the models this machine can actually spawn and writes the pstack-* entries into ~/.omp/agent/config.yml. Use for /setup-pstack, "configure pstack models", "pstack budget", or changing pstack's model choices.
+description: Configure which models pstack's role agents use and at what reasoning budget. Detects the models this machine can actually spawn and writes the pstack-* entries into the project's .omp/config.yml or the global ~/.omp/agent/config.yml, whichever the user picks. Use for /setup-pstack, "configure pstack models", "pstack budget", or changing pstack's model choices.
 ---
 
 # Setup pstack
 
-Write the seven `pstack-*` entries in `~/.omp/agent/config.yml`: a `modelRoles` key holding the concrete selector, and a `task.agentModelOverrides` entry pointing the role agent at it. Those two keys decide which model each pstack worker runs on.
+Write the seven `pstack-*` entries into one config file: a `modelRoles` key holding the concrete selector, and a `task.agentModelOverrides` entry pointing the role agent at it. Those two keys decide which model each pstack worker runs on. Step 3(a) asks whether that file is the project's `.omp/config.yml` or the global `~/.omp/agent/config.yml`; the project file only affects this repo, the global file affects every project on this machine.
 
 ## Steps
 
@@ -25,20 +25,25 @@ done
 
 ### 2. Load current state
 
-The role list and their intents are in step 5. If `~/.omp/agent/config.yml` already defines `modelRoles.pstack-*`, read those values and the `# pstack budget:` comment above them, and treat them as the current choices. Otherwise start from the defaults for each intent.
+The role list and their intents are in step 5. Check the project's `.omp/config.yml` first, then `~/.omp/agent/config.yml`. If either already defines `modelRoles.pstack-*`, read those values and the `# pstack budget:` comment above them, treat them as the current choices, and name which file they came from when you ask the scope question in step 3. Otherwise start from the defaults for each intent.
 
-### 3. Budget, map, and confirm
+### 3. Scope, budget, map, and confirm
 
-**(a) Ask for a budget.** Prefer `ask` over free text. Offer these four options with these exact labels, and name the current budget when the config records one.
+**(a) Ask for scope.** Prefer `ask` over free text. Offer these two options with these exact labels, and name whichever file step 2 found current values in as the default.
+
+- `this project only — write .omp/config.yml` (recommended: leaves every other project's settings alone)
+- `every project on this machine — write ~/.omp/agent/config.yml`
+
+**(b) Ask for a budget.** Prefer `ask` over free text. Offer these four options with these exact labels, and name the current budget when the config records one.
 
 - `unlimited — keep max`
 - `large — xhigh reasoning`
 - `medium — high reasoning`
 - `small — medium reasoning`
 
-**(b) Apply it.** `unlimited` leaves every effort where it already is. `large`, `medium`, and `small` set the effort on every real selector to `xhigh`, `high`, or `medium`, panel entries included. The ladder is `off` < `minimal` < `low` < `medium` < `high` < `xhigh` < `max`. When the target level is not in that model's detected `thinking` array, take the highest detected level at or below the target. Never invent a level, and probe whatever you choose as step 1 describes. On a re-run, keep any role you changed by family.
+**(c) Apply it.** `unlimited` leaves every effort where it already is. `large`, `medium`, and `small` set the effort on every real selector to `xhigh`, `high`, or `medium`, panel entries included. The ladder is `off` < `minimal` < `low` < `medium` < `high` < `xhigh` < `max`. When the target level is not in that model's detected `thinking` array, take the highest detected level at or below the target. Never invent a level, and probe whatever you choose as step 1 describes. On a re-run, keep any role you changed by family.
 
-**(c) Show the roles and confirm.** Show every role with its selector, marking any selector step 1 did not confirm as needing a choice. Ask whether to accept as-is or change specific roles, offering the detected selectors as the options. Prefer `ask` over free text. `pstack-panel-1` through `pstack-panel-4` are four independent roles and one `pstack-panel-<n>` agent runs per configured panel entry, so their values set how many models a review panel actually spans. Give them four different families when the account carries four. Collapsing them to fewer weakens the panel, so say so rather than letting it happen silently.
+**(d) Show the roles and confirm.** Show every role with its selector, marking any selector step 1 did not confirm as needing a choice. Ask whether to accept as-is or change specific roles, offering the detected selectors as the options. Prefer `ask` over free text. `pstack-panel-1` through `pstack-panel-4` are four independent roles and one `pstack-panel-<n>` agent runs per configured panel entry, so their values set how many models a review panel actually spans. Give them four different families when the account carries four. Collapsing them to fewer weakens the panel, so say so rather than letting it happen silently.
 
 ### 4. Validate
 
@@ -46,7 +51,7 @@ Every selector written must have passed step 1's probe, suffix included. Write a
 
 ### 5. Write the roles
 
-Read `~/.omp/agent/config.yml`, replace the seven `modelRoles.pstack-*` keys and the seven `task.agentModelOverrides` entries named `pstack-*`, and write the file back.
+Read the file step 3(a) chose, the project's `.omp/config.yml` or the global `~/.omp/agent/config.yml`, replace the seven `modelRoles.pstack-*` keys and the seven `task.agentModelOverrides` entries named `pstack-*`, and write the file back. Create the file, and the `.omp/` directory, if the project scope was chosen and neither exists yet.
 
 Your write set is exactly those fourteen values. Everything else is out of scope, including anything that looks like it ought to be tidy:
 
@@ -95,11 +100,11 @@ Role intents:
 - `pstack-tooling`: a strong model from a different family than judgment. Serves the reflect tooling lens, where a second family sees different problems.
 - `pstack-panel-1` … `pstack-panel-4`: review-panel seats. Serve arena runners, architect runners, and interrogate reviewers, one agent per entry.
 
-A project's `.omp/config.yml` model roles override the global ones inside that project, so a repo can pin its own pstack models. The `/model` command's Roles view writes the same global keys by hand.
+A project's `.omp/config.yml` model roles override the global ones inside that project, so a repo can pin its own pstack models; step 3(a) is what picks which file this skill writes. The `/model` command's Roles view always writes the global keys, by hand.
 
 ### 6. Confirm
 
-Re-read `~/.omp/agent/config.yml` and show the user the final `modelRoles.pstack-*` values as they now stand in the file. Confirm each `agentModelOverrides` value you wrote is the alias, and say so if one is not. Tell them the roles apply to new task dispatches, since dispatch reloads settings before it resolves an agent. Re-running this skill updates them.
+Re-read the file you wrote and show the user the final `modelRoles.pstack-*` values as they now stand in it, naming the file's path. Confirm each `agentModelOverrides` value you wrote is the alias, and say so if one is not. Tell them the roles apply to new task dispatches, since dispatch reloads settings before it resolves an agent. Re-running this skill updates them.
 
 ### 7. Offer a verification skill (optional)
 

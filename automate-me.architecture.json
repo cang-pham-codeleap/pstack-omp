@@ -1,0 +1,271 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Automate-Me Architecture",
+    "quality_profile": "showcase",
+    "output": "automate-me-architecture.html",
+    "views": [
+      {
+        "id": "mining-pipeline",
+        "label": "Session Mining Pipeline",
+        "focus": ["cli", "orchestrator", "sessions", "miners", "cluster"],
+        "note": "Workspace session mining across judgment slices."
+      },
+      {
+        "id": "synthesis-gate",
+        "label": "Interactive Synthesis",
+        "focus": ["user", "ask_dialog", "cluster", "authoring"],
+        "note": "Clustering signals with interactive user clarification."
+      },
+      {
+        "id": "delivery-flow",
+        "label": "Quality Gate and Delivery",
+        "focus": ["authoring", "unslop", "target_store", "git_review"],
+        "note": "Unslop prose polish and git worktree PR delivery."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "Developer",
+      "sublabel": "User CLI / Chat Prompt",
+      "pos": [60, 300],
+      "size": [140, 68]
+    },
+    {
+      "id": "cli",
+      "type": "frontend",
+      "label": "Skill Entry Point",
+      "sublabel": "/skill:automate-me",
+      "pos": [300, 300],
+      "size": [140, 68],
+      "tag": "Step 0 Check"
+    },
+    {
+      "id": "ask_dialog",
+      "type": "frontend",
+      "label": "Ask Dialog Gate",
+      "sublabel": "ask tool UI",
+      "pos": [300, 110],
+      "size": [140, 68],
+      "tag": "Step 2 Multi-choice"
+    },
+    {
+      "id": "orchestrator",
+      "type": "backend",
+      "label": "Flow Controller",
+      "sublabel": "Flow Orchestrator",
+      "pos": [540, 300],
+      "size": [150, 68],
+      "tag": "task dispatcher"
+    },
+    {
+      "id": "sessions",
+      "type": "database",
+      "label": "Session Store",
+      "sublabel": "~/.omp/agent/sessions",
+      "pos": [540, 500],
+      "size": [150, 68],
+      "tag": "scoped JSONL"
+    },
+    {
+      "id": "miners",
+      "type": "backend",
+      "label": "Mining Swarm",
+      "sublabel": "pstack-judgment slices",
+      "pos": [780, 500],
+      "size": [150, 68],
+      "tag": "Step 1 Signal mining"
+    },
+    {
+      "id": "cluster",
+      "type": "backend",
+      "label": "Signal Clusterer",
+      "sublabel": "Multi-slice Consensus",
+      "pos": [780, 300],
+      "size": [150, 68],
+      "tag": "Step 3 Synthesis"
+    },
+    {
+      "id": "authoring",
+      "type": "backend",
+      "label": "Skill Authoring Engine",
+      "sublabel": "manage_skill / write",
+      "pos": [1020, 300],
+      "size": [150, 68],
+      "tag": "Step 4 Draft"
+    },
+    {
+      "id": "unslop",
+      "type": "security",
+      "label": "Unslop Linter",
+      "sublabel": "Prose Quality Guard",
+      "pos": [1020, 110],
+      "size": [150, 68],
+      "tag": "Step 5 AI audit"
+    },
+    {
+      "id": "target_store",
+      "type": "database",
+      "label": "Managed Skills",
+      "sublabel": ".omp or managed-skills",
+      "pos": [1260, 300],
+      "size": [140, 68],
+      "tag": "SKILL.md file"
+    },
+    {
+      "id": "git_review",
+      "type": "cloud",
+      "label": "Worktree & PR",
+      "sublabel": "Git Isolation Branch",
+      "pos": [1260, 500],
+      "size": [140, 68],
+      "tag": "Step 6 Land"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "OMP Execution Environment",
+      "wraps": [
+        "cli",
+        "ask_dialog",
+        "orchestrator",
+        "sessions",
+        "miners",
+        "cluster",
+        "authoring",
+        "unslop",
+        "target_store",
+        "git_review"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "Transformation & Quality Pipeline",
+      "wraps": ["cluster", "authoring", "unslop"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "invoke-skill",
+      "from": "user",
+      "to": "cli",
+      "label": "invoke mode",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cli-to-orch",
+      "from": "cli",
+      "to": "orchestrator",
+      "label": "check existing"
+    },
+    {
+      "id": "orch-to-sessions",
+      "from": "orchestrator",
+      "to": "sessions",
+      "label": "resolve path",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 40
+    },
+    {
+      "id": "sessions-to-miners",
+      "from": "sessions",
+      "to": "miners",
+      "label": "read slices"
+    },
+    {
+      "id": "miners-to-cluster",
+      "from": "miners",
+      "to": "cluster",
+      "label": "patterns (2+ match)",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "orch-to-cluster",
+      "from": "orchestrator",
+      "to": "cluster",
+      "label": "fan-in wait"
+    },
+    {
+      "id": "cluster-ask-user",
+      "from": "cluster",
+      "to": "ask_dialog",
+      "label": "missing intent",
+      "fromSide": "top",
+      "toSide": "right",
+      "variant": "dashed"
+    },
+    {
+      "id": "ask-to-user",
+      "from": "ask_dialog",
+      "to": "user",
+      "label": "clarification",
+      "fromSide": "left",
+      "toSide": "top"
+    },
+    {
+      "id": "cluster-to-authoring",
+      "from": "cluster",
+      "to": "authoring",
+      "label": "sections draft",
+      "variant": "emphasis"
+    },
+    {
+      "id": "authoring-to-unslop",
+      "from": "authoring",
+      "to": "unslop",
+      "label": "audit prose",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "variant": "security"
+    },
+    {
+      "id": "authoring-to-store",
+      "from": "authoring",
+      "to": "target_store",
+      "label": "write SKILL.md",
+      "variant": "emphasis"
+    },
+    {
+      "id": "authoring-to-git",
+      "from": "authoring",
+      "to": "git_review",
+      "label": "commit PR",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "History Mining",
+      "items": [
+        "Workspace-scoped session resolution prevents cross-project leakage",
+        "Judgment subagents mine slices in parallel for high-confidence signals"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Interactive Synthesis",
+      "items": [
+        "Cluster findings into response style, autonomy, and discipline",
+        "Targeted ask dialog clarifies missing intent without survey fatigue"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Quality & Landing",
+      "items": [
+        "Strict unslop pass strips AI idioms before file generation",
+        "Worktree commit and PR gate prevent direct pushes to main"
+      ]
+    }
+  ]
+}
