@@ -2,15 +2,15 @@
 
 > a community port of [cursor/plugins#pstack](https://github.com/cursor/plugins/tree/main/pstack) to [oh-my-pi](https://github.com/can1357/oh-my-pi) (`omp`). the skills, playbooks, principles, and prose are [poteto](https://x.com/poteto)'s work, MIT licensed. this port rewrites the cursor-specific mechanics into omp's: `task` role agents instead of `subagent_type` plus per-spawn models, `modelRoles.pstack-*` with matching `task.agentModelOverrides` entries in `~/.omp/agent/config.yml` instead of a cursor rules file, and omp's `browser` / `hub` PTY tools instead of `cursor-team-kit`. [not shipped here](#not-shipped-here) lists what did not come across.
 
-i'm [poteto](https://x.com/poteto). i'm not a president or ceo, but i've worked with millions of lines of code at Meta, Netflix, and Cursor. i'm also on the react core team where i help build and maintain react compiler.
+this repo forks [poteto](https://x.com/poteto)'s pstack workflow. poteto is a developer at SpaceX who once shipped 800 PRs in half a month.
 
-there's a growing sense that ai writes too much slop code. i agree. i don't want to ship like a team of twenty slop artists. throughput without quality is not a goal i aspire to. if you want to go fast, go deep first. 
+there's a growing sense that ai writes too much slop code. poteto agrees. poteto doesn't want to ship like a team of twenty slop artists. throughput without quality is not a goal poteto aspires to. if you want to go fast, go deep first.
 
-**pstack is my answer.** these are the same skills i use everyday to ship high quality code at Cursor. this turns omp into a real engineering team. the goal is not to maximize loc, in fact it's the opposite. pstack helps you write less, but higher quality code.
+**pstack is poteto's answer.** these are the same skills poteto uses everyday to ship high quality code. this turns omp into a real engineering team. the goal is not to maximize loc, in fact it's the opposite. pstack helps you write less, but higher quality code.
 
 **pstack gives you fearless parallelism.** when you can go deep on one agent and trust it to write good, verifiable code, you can truly parallelize with confidence. start multiple agents up with `poteto-mode` and trust that they'll apply rigorous engineering principles to their work.
 
-**omp gives you the best of all worlds.** every frontier model has its strengths and weaknesses. use any model with pstack. in fact, many of my skills use multi-model workflows to take advantage of each model's unique strengths.
+**omp gives you the best of all worlds.** every frontier model has its strengths and weaknesses. use any model with pstack. in fact, many of poteto's skills use multi-model workflows to take advantage of each model's unique strengths.
 
 fork it. improve it. make it yours. PRs are welcome! 
 
@@ -40,7 +40,7 @@ use [`/skill:poteto-mode`](./skills/poteto-mode/SKILL.md) at the start of a task
 
 ### just use [`/skill:poteto-mode`](./skills/poteto-mode/SKILL.md)
 
-this skill is the main shortcut. i use it whenever i need the agent to do rigorous engineering work. it comes with twenty-three playbooks:
+this skill is the main shortcut. poteto uses it whenever poteto needs the agent to do rigorous engineering work. it comes with twenty-three playbooks:
 
 ```
 /skill:poteto-mode this pr has a subtle bug where the scroll drifts every 750ms even when idle. repro
@@ -79,7 +79,7 @@ morning.
 | [pause safely](./skills/poteto-mode/playbooks/pause-safely.md) | suspend in-flight work cleanly so it can be resumed later. |
 | [multi-phase plan](./skills/poteto-mode/playbooks/multi-phase-plan.md) | work that spans phases or stacked PRs. |
 | [worktree cleanup](./skills/poteto-mode/playbooks/worktree-cleanup.md) | reclaim disk by pruning merged or abandoned worktrees and stale ios simulators, safety-gated. |
-| [opening a pr](./skills/poteto-mode/playbooks/opening-a-pr.md) | open a ready pr from small ordered commits with a conventional commits title and a briefing-style body. invoked at the end of every other playbook. |
+| [opening a pr](./skills/poteto-mode/playbooks/opening-a-pr.md) | open a ready pr from small ordered commits with a conventional commits title and a briefing-style body. invoked at the end of every playbook that lands a diff. |
 
 </details>
 
@@ -144,7 +144,7 @@ the full rules and playbooks live in [`skills/poteto-mode/SKILL.md`](./skills/po
 
 ### examples
 
-mostly i type [`/skill:poteto-mode`](./skills/poteto-mode/SKILL.md) at the start of a task and let it route to a playbook. the other skills fire as the steps need them. a few i reach for directly.
+mostly poteto types [`/skill:poteto-mode`](./skills/poteto-mode/SKILL.md) at the start of a task and lets it route to a playbook. the other skills fire as the steps need them. a few poteto reaches for directly.
 
 
 <details>
@@ -189,7 +189,7 @@ automate-me:       /skill:automate-me
 
 ## the `poteto-agent` and Comment Sicko subagents
 
-pstack also ships a subagent that runs my style end to end. spawn it from a parent agent with the `task` tool as [`agent: "poteto-agent"`](./agents/poteto-agent.md). it reads `poteto-mode` in full, including its inline principles index, before doing any work. spawning any other agent skips that read and drifts.
+pstack also ships a subagent that runs poteto's style end to end. spawn it from a parent agent with the `task` tool as [`agent: "poteto-agent"`](./agents/poteto-agent.md). it reads `poteto-mode` in full, including its inline principles index, before doing any work. reach for it when a step names no agent. the seven `pstack-*` role agents are model carriers and don't read the skill, so a step that names one carries the scope its delegate needs.
 
 [`/skill:poteto-mode`](./skills/poteto-mode/SKILL.md) and [`agent: "poteto-agent"`](./agents/poteto-agent.md) route through the same wrapper.
 
@@ -242,11 +242,11 @@ a few things `poteto-mode` references but doesn't bundle:
 
 ## why are there no planning skills?
 
-omp already has a great plan mode which works great with pstack. but personally, i don't believe in planning. the best spec is code. if you do want to make a plan, [`/skill:poteto-mode`](./skills/poteto-mode/SKILL.md) covers it, but it's not a default. 
+omp already has a great plan mode which works great with pstack. but personally, poteto doesn't believe in planning. the best spec is code. if you do want to make a plan, [`/skill:poteto-mode`](./skills/poteto-mode/SKILL.md) covers it, but it's not a default. 
 
 ## make it yours
 
-`poteto-mode` is my style. you may not want exactly that.
+`poteto-mode` is poteto's style. you may not want exactly that.
 
 type [`/skill:automate-me`](./skills/automate-me/SKILL.md). it mines your recent transcripts, drafts a `<your-name>-mode` skill from how you've actually worked, and routes through pstack underneath. you keep pstack as the base and end up with your own routing skill alongside `poteto-mode`.
 
