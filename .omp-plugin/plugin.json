@@ -25,16 +25,5 @@
     "principles",
     "review",
     "planning"
-  ],
-  "agents": [
-    "./claude/agents/comment-sicko.md",
-    "./claude/agents/poteto-agent.md",
-    "./claude/agents/pstack-code.md",
-    "./claude/agents/pstack-judgment.md",
-    "./claude/agents/pstack-panel-1.md",
-    "./claude/agents/pstack-panel-2.md",
-    "./claude/agents/pstack-panel-3.md",
-    "./claude/agents/pstack-panel-4.md",
-    "./claude/agents/pstack-tooling.md"
   ]
 }

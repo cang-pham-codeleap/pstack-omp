@@ -23,6 +23,15 @@ omp plugin install --scope user pstack@pstack-omp
 
 discovery happens at session start, so start a new session after installing or run `/reload-plugins` in the one you're in. skill commands are `/skill:<name>` when `skills.enableSkillCommands` is on; reading `skill://<name>` works either way.
 
+### claude code
+
+```text
+/plugin marketplace add cang-pham-codeleap/pstack-omp
+/plugin install pstack@pstack-omp
+```
+
+skills run as `/pstack:<name>` (e.g. `/pstack:poteto-mode`). a session-start hook teaches claude code how to read the omp-flavored skills; role models are fixed in [`claude/agents/`](./claude/agents/), so skip `setup-pstack`. details: [omp and Claude Code](./docs/guide/11-omp-and-claude-code.md).
+
 ## get started
 
 two steps:
