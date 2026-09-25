@@ -22,6 +22,7 @@ Code and features:
 2. Run it and exercise the actual feature path
 3. Check the full chain: does data flow from input to output?
 4. For integrations, test the full communication path end-to-end
+5. For motion, interaction, and multi-step journeys (scroll, drag and drop, animation, a stepper, search to checkout), an end-state screenshot can miss the claim. Read the state across the run, check that values carry from the first step to the last, and when a human needs to see it, offer a recording (the **video-evidence** skill)
 
 Delegation: trust artifacts, not self-reports.
 When verifying delegated work, inspect the actual output artifact (git diff, file contents, runtime behavior), not the delegate's summary.

@@ -143,6 +143,7 @@ the full rules and playbooks live in [`skills/poteto-mode/SKILL.md`](./skills/po
 | [`/skill:show-me-your-work`](./skills/show-me-your-work/SKILL.md) | you want a reviewable decision trail. logs decisions to a tsv you can commit. |
 | [`/skill:create-verification-skill`](./skills/create-verification-skill/SKILL.md) | your project has no scripted way to prove app behavior. generates a project-local verify skill with a feature map, for any language or platform. |
 | [`/skill:maintain-verification-skill`](./skills/maintain-verification-skill/SKILL.md) | your verify skill's feature map has drifted from the app. source wave + one live pass, at most one PR of proven corrections. |
+| [`/skill:video-evidence`](./skills/video-evidence/SKILL.md) | you want to see a change, not just read about it: scroll, drag and drop, animation, a stepper, a search-to-checkout journey, a bug repro, or a demo for a PM. records the real browser run with captions and a big cursor, plus a storyboard and a state trace. optional, on request. |
 | [`/skill:unslop`](./skills/unslop/SKILL.md) | you're cleaning up writing. removes AI tells. |
 | [`/skill:bro`](./skills/bro/SKILL.md) | you want the last message restated in plain human language, no jargon. |
 | [`/skill:technical-writing`](./skills/technical-writing/SKILL.md) | layered doc standard (Diátaxis + Google developer style + STE + Global English) for docs, RFCs, readmes, PR descriptions, commit messages. |

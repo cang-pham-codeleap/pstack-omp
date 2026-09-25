@@ -18,6 +18,7 @@ Match the check to the change:
 
 - A CLI change runs the real command.
 - A UI change walks the changed flow in the running app.
+- A scroll, drag and drop, or animation change, a multi-step workflow (a stepper, search to checkout), or a feature demo can come with a recording if you want to see it. Ask for one and [`/skill:video-evidence`](../../skills/video-evidence/SKILL.md) captures a captioned MP4 with a big cursor, a storyboard image you can read in chat, and a trace of the page state after each step. Long journeys are recorded per chapter and joined, and a slower presentation cut is available for demos.
 - A parser or migration replays a saved input.
 - A perf change compares before and after profiles.
 - A storage change reads back the written value.

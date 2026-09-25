@@ -13,7 +13,7 @@
       "name": "pstack",
       "description": "Rigorous agent workflows: poteto-mode, principles, review panels, unslop. Write less, higher quality code.",
       "source": "./",
-      "version": "0.15.2",
+      "version": "0.16.0",
       "author": {
         "name": "Lauren Tan"
       },
