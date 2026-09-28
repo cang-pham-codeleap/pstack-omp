@@ -32,6 +32,24 @@
     addEventListener("drop", () => { cursor.style.transform = ""; }, true);
     let store = null;
     try { store = sessionStorage; } catch {}
+    let fileInputClickCount = Number(store?.getItem("__ev_file_input_click_count") ?? "0") || 0;
+    const publishFileInputClickCount = () => {
+      document.documentElement.dataset.evFileInputClickCount = String(fileInputClickCount);
+      store?.setItem("__ev_file_input_click_count", String(fileInputClickCount));
+    };
+    publishFileInputClickCount();
+    const originalClick = HTMLInputElement.prototype.click;
+    if (!originalClick.__ev_wrapped__) {
+      const wrappedClick = function (...args) {
+        if (this?.type === "file") {
+          fileInputClickCount += 1;
+          publishFileInputClickCount();
+        }
+        return originalClick.apply(this, args);
+      };
+      Object.defineProperty(wrappedClick, "__ev_wrapped__", { value: true });
+      HTMLInputElement.prototype.click = wrappedClick;
+    }
     const show = (text) => {
       caption.textContent = text;
       caption.style.display = text ? "block" : "none";

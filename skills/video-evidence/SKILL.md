@@ -9,8 +9,8 @@ disable-model-invocation: true
 A screenshot proves a state. It cannot prove that the list scrolled, the card was dragged, or the toast slid in rather than popped. For those claims, record the real session and hand the human three artifacts that agree with each other:
 
 - **`<slug>.mp4`.** The recorded run, with an oversized cursor, a ripple on every press, and a caption naming each step. For the human.
-- **`<slug>.storyboard.png`.** Frames tiled at a fixed rate. The whole run at a glance, and the version that renders inline in chat and PRs.
-- **`<slug>.trace.json`.** The state read from the page after every step and across every transition. For the machine and for timing claims.
+- **`<slug>.storyboard.png`.** For step-based flows, one tile per captioned step, taken right after that step's probe. For motion-first clips, a time-sampled grid of the run. The whole run at a glance, and the version that renders inline in chat and PRs.
+- **`<slug>.trace.json`.** The state read from the page after every captioned step and across every transition. Keep the per-step checkpoints that map 1:1 to storyboard tiles separate from any extra transition samples. For the machine and for timing claims.
 
 Video alone is not proof: an agent can record the wrong thing and describe it confidently. The trace alone is not evidence a human can check. Ship both, and make them tell the same story.
 
@@ -52,6 +52,17 @@ const out = await tab.run(async ({ tab, page }) => {
   let n = 0;
   const step = (text) => page.evaluate((t) => document.dispatchEvent(new CustomEvent("evidence:step", { detail: t })), `${++n}. ${text}`);
   const at = { x: 0, y: 0 };
+  const frames = [];
+  const checkpoints = [];
+  const snapStep = async (label) => {
+    const state = await page.evaluate(() => ({
+      fileInputClickCount: Number(document.documentElement.dataset.evFileInputClickCount ?? "0"),
+      // Read the state the claim is about: scrollTop, parent of the dragged node, computed style mid-transition.
+    }));
+    checkpoints.push({ step: n, label, t: Date.now() - t0, ...state });
+    await page.screenshot({ path: `<dir>/frame-${String(n).padStart(2, "0")}.png` });
+    frames.push({ step: n, label, path: `<dir>/frame-${String(n).padStart(2, "0")}.png` });
+  };
   const glide = async (x, y, ms = 600) => {
     const n = Math.max(2, Math.round(ms / 16));
     for (let i = 1; i <= n; i++) { await page.mouse.move(at.x + ((x - at.x) * i) / n, at.y + ((y - at.y) * i) / n); await sleep(16); }
@@ -60,6 +71,7 @@ const out = await tab.run(async ({ tab, page }) => {
   const trace = [];
   const t0 = Date.now();
   const probe = async (label) => trace.push({ t: Date.now() - t0, label, ...(await page.evaluate(() => ({
+    fileInputClickCount: Number(document.documentElement.dataset.evFileInputClickCount ?? "0"),
     // Read the state the claim is about: scrollTop, parent of the dragged node, computed style mid-transition.
   }))) });
 
@@ -74,12 +86,15 @@ const out = await tab.run(async ({ tab, page }) => {
   await glide(to.x + to.width / 2, to.y + to.height / 2, 800);
   await page.mouse.up();
   await probe("after-drop");
+  await snapStep("after-drop");
 
   await step("Toast slides in");
   for (let i = 0; i < 5; i++) { await sleep(150); await probe(`toast-${i}`); }
   await sleep(600);
+  await snapStep("toast-settled");
 
-  return { trace, recording: await tab.recordStop() };
+  if (frames.length !== n || checkpoints.length !== n) throw new Error(`step/storyboard mismatch: steps=${n} checkpoints=${checkpoints.length} frames=${frames.length}`);
+  return { trace, checkpoints, frames, recording: await tab.recordStop() };
 }, { timeout: 120 });
 await Bun.write("<dir>/<slug>.trace.json", JSON.stringify(out.trace, null, 2));
 ```
@@ -90,7 +105,8 @@ Rules for the drive:
 - **Pace it for a human.** Unpaced `page.mouse.move(x, y, { steps })` finishes inside one frame and the video shows a teleport. Glide in roughly 16 ms steps over 400 to 800 ms per travel. Scroll in wheel ticks with a short sleep between them.
 - **Keyboard paths count.** When the feature has a keyboard alternative (keyboard reordering, arrow navigation), record it too: focus the element, then pause about 500 ms between key presses so the focus ring and each move stay visible.
 - **Caption before acting.** One `step()` per user action, phrased as the user would say it. The viewer should never have to guess what is happening.
-- **Hold the result.** Keep each result state on screen for at least 500 ms and hold the final state before stopping. The last frame is part of the evidence.
+- **Probe, then frame, for each captioned step.** Right after each step's proof probe, take a screenshot and add it to a per-step frame list. Build the storyboard from those frames for step-based flows. Keep the MP4 time-sampled storyboard only for motion-heavy clips where the in-between frames are the point.
+- **Hold the result.** Keep each result state on screen for at least 500 ms and hold the final state before stopping. If the only visible change is the caption text, hold about 1 s so the recorder has time to emit a frame.
 - **Probe after every step and across every transition.** Sample a transition at its start, middle, and end, so the trace shows the curve (`top: -80px → -24px → 8px → 16px`), not just the endpoints.
 
 ## 3. Multi-step workflows
@@ -115,6 +131,7 @@ A stepper or a search-to-checkout journey runs across pages and minutes. It fail
 
   In-page steps (a stepper that re-renders without navigating) need no navigation wait: wait for the step indicator.
 - **Captions survive same-origin page loads.** The overlay keeps the current caption in `sessionStorage`. After a hop to another origin (a hosted payment page) it starts blank, so call `step()` again once that page lands.
+- **Keep the bookkeeping 1:1.** After every captioned step, append one checkpoint and one screenshot to the workflow's per-step list. Transition probes can be extra, but the step list must stay one row per caption from step 1 through step N, even when the MP4 is stitched from chapters.
 - **Checkpoint every chapter.** End each chapter with a `probe` that reads the values the journey carries: the selected item, quantity, subtotal, stepper position, URL. Read form fields through `.value`; `innerText` does not include what the user typed. The predicate that matters most is carry-through: what the user entered on the first step is what the last step shows.
 - **Record unhappy paths separately.** Validation on each step, Back keeping entered data, a refresh mid-flow, a declined test card (Stripe: `4000 0000 0000 0002`). One short clip each, named for the path.
 - **Payment fields are cross-origin frames.** Hosted fields (Stripe Elements, Adyen, Braintree) live in iframes. Wait for the frame, then type into it: `page.frames().find((f) => f.url().includes("<provider host>"))`.
@@ -141,17 +158,28 @@ Write the pass predicate for each claim before reading the video, then check it 
 
 A predicate that fails is the finding. Do not retune the sampling until it passes.
 
+Before you report, hard-assert the captioned-step bookkeeping:
+
+- `step()` calls == per-step checkpoints == storyboard tiles.
+- Caption numbers on the tiles run `1..N` with no gaps.
+- The workflow table you will post has one row per tile, no more and no less.
+
+If any count or caption number mismatches, fail the run and fix the recording before you cite it. Extra transition probes are fine; silent step loss is not.
+
 ## 5. Verify the recording itself
 
 A recording is an artifact like any other. Check it before you cite it.
 
 - `ffprobe -v error -show_entries format=duration:stream=width,height,r_frame_rate -of compact <slug>.mp4`. Duration above zero, size matches the viewport.
 - `read <slug>.mp4` returns a preview grid. `read <slug>.mp4:1.2s` returns one frame. Look at the frames that should show each step.
-- Build the storyboard so the tiles span the whole run: for a 4x3 grid and a run of `D` seconds, `ffmpeg -v error -y -i <slug>.mp4 -vf "fps=12/D,scale=400:-1,tile=4x3" -frames:v 1 <slug>.storyboard.png`. A fixed `fps` on a long run fills the grid from the first seconds only. Read it back and confirm each captioned step is visible.
+- For step-based flows, tile the per-step screenshots: `ffmpeg -v error -y -framerate 1 -i frame-%02d.png -vf "tile=CxR" <slug>.storyboard.png`. For motion-first clips, use the time-sampled grid: `ffmpeg -v error -y -i <slug>.mp4 -vf "fps=12/D,scale=400:-1,tile=4x3" -frames:v 1 <slug>.storyboard.png`. A fixed `fps` on a long run fills the grid from the first seconds only, which is why it is the wrong default for captioned workflows.
+- Read the storyboard back and assert the tile count matches the per-step checkpoints and the caption numbers run `1..N`.
+- Build a caption strip and read it back: `ffmpeg -v error -y -i <slug>.mp4 -vf "crop=iw:60:0:ih-60,fps=4,tile=1xN" -frames:v 1 <slug>.captions.png`. Every caption must appear in at least one sampled frame. If a caption is missing, fail the run instead of hand-waving the gap.
+- Read the captions themselves for grammar and accuracy. Fix awkward wording before you ship the artifact.
 
 ## 6. Report
 
-Put the three paths in the reply, then one line per claim: the predicate, its result from the trace, and the timestamp in the video where a human can see it. For a workflow, make it a table: chapter, checkpoint, result, and the chapter's start time in the joined cut. Embed the storyboard where the surface renders images (a PR body, the chat) and link the MP4. Keep the artifacts in a location the task names, for example `/tmp/swarm-<pr-id>/worker-<n>/` in a swarm lane or the verify skill's evidence directory, and never delete them in cleanup.
+Put the three paths in the reply, then one line per claim: the predicate, its result from the trace, and the timestamp in the video where a human can see it. For a workflow, make it a table with one row per storyboard tile: step, checkpoint, trace result, and where to see it. In the trace-result column, show only the fields that changed from the previous step (`fileInputClickCount: 0 → 1`, not a full dump). In the where-to-see column, point to either `frame N, ~Xs` or `trace only (<reason>)` when the evidence is headless-only, such as a native file picker click. The PR table and storyboard must stay 1:1. Embed the storyboard where the surface renders images (a PR body, the chat) and link the MP4. Keep the artifacts in a location the task names, for example `/tmp/swarm-<pr-id>/worker-<n>/` in a swarm lane or the verify skill's evidence directory, and never delete them in cleanup.
 
 ## Gotchas
 
@@ -159,6 +187,7 @@ Put the three paths in the reply, then one line per claim: the predicate, its re
 - **Two JS worlds.** `tab.evaluate` and Puppeteer's `page.evaluate` inside `tab.run` do not share globals. The overlay listens for a DOM `evidence:step` event for that reason. Talk to page code through the DOM, not a global.
 - **The contact sheet skips motion.** `recordStart({ contactSheet: true })` keeps only frames that changed past a threshold and can drop every mid-drag frame. It is a quick glance, not the storyboard.
 - **The video clock is not the wall clock.** The recorder emits frames when the screen changes, so video timestamps drift from real time. Timing claims come from the trace.
+- **A file input may only prove itself in the trace.** Headless Chromium cannot show the OS file picker. Count `HTMLInputElement.prototype.click` calls on `type=file` in the init script, read that counter in the per-step probe, and report the step as `trace only (native dialog is outside the browser surface)` when needed.
 - **Native HTML5 drag has no drag image in headless Chromium.** The node stays put until the drop. The cursor path plus the before and after frames carry the story. Pointer-driven drag libraries render the movement. If a stepped mouse drag does not fire the drop, fall back to `tab.drag(source, target)` and say so in the report. It fires the drag events but jumps.
 - **The overlay shows up in screenshots.** Take pixel-diff baselines without it: `await tab.removeInitScript(overlay.id)` and reload. `addInitScript` returns `{ id }`, not a bare id.
 - **Built-in cursor.** `recordStart(path, { cursor: true })` draws a small cursor. It is hard to follow at review size, which is why the overlay draws its own. Use one or the other, not both.
