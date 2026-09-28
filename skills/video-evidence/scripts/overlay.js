@@ -40,12 +40,15 @@
     };
     publishFileInputClickCount();
     const clickPrototype = HTMLInputElement.prototype;
-    const clickDescriptor = Object.getOwnPropertyDescriptor(clickPrototype, "click");
-    const originalClick = clickPrototype.__ev_original_click__ ?? clickPrototype.click;
-    if (!clickPrototype.__ev_original_click__) {
-      Object.defineProperty(clickPrototype, "__ev_original_click__", { value: originalClick });
+    let clickOwner = clickPrototype;
+    while (clickOwner && !Object.prototype.hasOwnProperty.call(clickOwner, "click")) clickOwner = Object.getPrototypeOf(clickOwner);
+    clickOwner ??= clickPrototype;
+    const clickDescriptor = Object.getOwnPropertyDescriptor(clickOwner, "click");
+    const originalClick = clickOwner.__ev_original_click__ ?? clickOwner.click;
+    if (!clickOwner.__ev_original_click__) {
+      Object.defineProperty(clickOwner, "__ev_original_click__", { value: originalClick });
     }
-    if (!clickPrototype.__ev_wrapped__) {
+    if (!clickOwner.__ev_wrapped__) {
       const wrappedClick = function (...args) {
         if (this?.type === "file" && !this.disabled) {
           const root = this.ownerDocument?.documentElement;
@@ -60,8 +63,8 @@
         return originalClick.apply(this, args);
       };
       Object.defineProperty(wrappedClick, "__ev_wrapped__", { value: true });
-      Object.defineProperty(clickPrototype, "click", { ...(clickDescriptor ?? { configurable: true, writable: true }), value: wrappedClick });
-      Object.defineProperty(clickPrototype, "__ev_wrapped__", { value: true });
+      Object.defineProperty(clickOwner, "click", { ...(clickDescriptor ?? { configurable: true, writable: true }), value: wrappedClick });
+      Object.defineProperty(clickOwner, "__ev_wrapped__", { value: true });
     }
     const show = (text) => {
       caption.textContent = text;
