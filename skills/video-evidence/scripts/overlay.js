@@ -48,7 +48,7 @@
     if (!clickOwner.__ev_original_click__) {
       Object.defineProperty(clickOwner, "__ev_original_click__", { value: originalClick });
     }
-    if (!clickOwner.__ev_wrapped__) {
+    if (!clickOwner.__ev_wrapped__ && clickDescriptor?.configurable) {
       const wrappedClick = function (...args) {
         if (this?.type === "file" && !this.disabled) {
           const countKey = "__ev_file_input_click_count";
