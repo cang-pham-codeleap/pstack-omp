@@ -46,7 +46,7 @@
     }
     if (!clickPrototype.__ev_wrapped__) {
       const wrappedClick = function (...args) {
-        if (this?.type === "file") {
+        if (this?.type === "file" && !this.disabled) {
           const root = this.ownerDocument?.documentElement;
           let nextCount = Number(root?.dataset.evFileInputClickCount ?? "0") + 1;
           try {
