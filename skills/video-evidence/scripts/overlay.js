@@ -32,23 +32,35 @@
     addEventListener("drop", () => { cursor.style.transform = ""; }, true);
     let store = null;
     try { store = sessionStorage; } catch {}
-    let fileInputClickCount = Number(store?.getItem("__ev_file_input_click_count") ?? "0") || 0;
+    const FILE_INPUT_CLICK_COUNT_KEY = "__ev_file_input_click_count";
+    let fileInputClickCount = Number(store?.getItem(FILE_INPUT_CLICK_COUNT_KEY) ?? "0") || 0;
     const publishFileInputClickCount = () => {
       document.documentElement.dataset.evFileInputClickCount = String(fileInputClickCount);
-      store?.setItem("__ev_file_input_click_count", String(fileInputClickCount));
+      store?.setItem(FILE_INPUT_CLICK_COUNT_KEY, String(fileInputClickCount));
     };
     publishFileInputClickCount();
-    const originalClick = HTMLInputElement.prototype.click;
-    if (!originalClick.__ev_wrapped__) {
+    const clickPrototype = HTMLInputElement.prototype;
+    const originalClick = clickPrototype.__ev_original_click__ ?? clickPrototype.click;
+    if (!clickPrototype.__ev_original_click__) {
+      Object.defineProperty(clickPrototype, "__ev_original_click__", { value: originalClick });
+    }
+    if (!clickPrototype.__ev_wrapped__) {
       const wrappedClick = function (...args) {
         if (this?.type === "file") {
-          fileInputClickCount += 1;
-          publishFileInputClickCount();
+          const root = this.ownerDocument?.documentElement;
+          let nextCount = Number(root?.dataset.evFileInputClickCount ?? "0") + 1;
+          try {
+            this.ownerDocument?.defaultView?.sessionStorage?.setItem(FILE_INPUT_CLICK_COUNT_KEY, String(nextCount));
+          } catch {
+            nextCount = Number(root?.dataset.evFileInputClickCount ?? "0") + 1;
+          }
+          if (root) root.dataset.evFileInputClickCount = String(nextCount);
         }
         return originalClick.apply(this, args);
       };
       Object.defineProperty(wrappedClick, "__ev_wrapped__", { value: true });
-      HTMLInputElement.prototype.click = wrappedClick;
+      clickPrototype.click = wrappedClick;
+      Object.defineProperty(clickPrototype, "__ev_wrapped__", { value: true });
     }
     const show = (text) => {
       caption.textContent = text;
