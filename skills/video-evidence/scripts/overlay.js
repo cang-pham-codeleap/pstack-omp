@@ -40,6 +40,7 @@
     };
     publishFileInputClickCount();
     const clickPrototype = HTMLInputElement.prototype;
+    const clickDescriptor = Object.getOwnPropertyDescriptor(clickPrototype, "click");
     const originalClick = clickPrototype.__ev_original_click__ ?? clickPrototype.click;
     if (!clickPrototype.__ev_original_click__) {
       Object.defineProperty(clickPrototype, "__ev_original_click__", { value: originalClick });
@@ -59,7 +60,7 @@
         return originalClick.apply(this, args);
       };
       Object.defineProperty(wrappedClick, "__ev_wrapped__", { value: true });
-      clickPrototype.click = wrappedClick;
+      Object.defineProperty(clickPrototype, "click", { ...(clickDescriptor ?? { configurable: true, writable: true }), value: wrappedClick });
       Object.defineProperty(clickPrototype, "__ev_wrapped__", { value: true });
     }
     const show = (text) => {
