@@ -60,8 +60,8 @@ const out = await tab.run(async ({ tab, page }) => {
       // Read the state the claim is about: scrollTop, parent of the dragged node, computed style mid-transition.
     }));
     checkpoints.push({ step: n, label, t: Date.now() - t0, ...state });
-    await page.screenshot({ path: `<dir>/frame-${String(n).padStart(2, "0")}.png` });
-    frames.push({ step: n, label, path: `<dir>/frame-${String(n).padStart(2, "0")}.png` });
+    await page.screenshot({ path: `<frames-dir>/frame-${String(n).padStart(2, "0")}.png` });
+    frames.push({ step: n, label, path: `<frames-dir>/frame-${String(n).padStart(2, "0")}.png` });
   };
   const glide = async (x, y, ms = 600) => {
     const n = Math.max(2, Math.round(ms / 16));
@@ -99,6 +99,8 @@ const out = await tab.run(async ({ tab, page }) => {
 await Bun.write("<dir>/<slug>.trace.json", JSON.stringify(out.trace, null, 2));
 ```
 
+Use one `<frames-dir>` per storyboard artifact. For a single clip, it can live directly under the evidence directory. For chaptered workflows, make it segment-specific (`<dir>/<segment-slug>/`) so each storyboard reads only that chapter's frames.
+
 Rules for the drive:
 
 - **Real input only.** `page.mouse` moves, presses, and wheel ticks, `page.keyboard`, and the tab helpers. Never set state through `evaluate` to fake an interaction.
@@ -116,7 +118,7 @@ A stepper or a search-to-checkout journey runs across pages and minutes. It fail
 - **Script from the acceptance criteria.** Write the journey as chapters before opening the browser. Each chapter has a name, the user actions, and the checkpoint that proves it worked. For checkout: `search` (results list the query), `product` (price read), `cart` (count and subtotal), `checkout` (address accepted), `payment` (test card accepted), `confirmation` (order id shown, total equals the cart total).
 - **Test data only.** Run against local or staging, with a seeded account and the payment provider's test mode (Stripe: card `4242 4242 4242 4242`). Never use a real card or a production account, and never run a flow that emails real people. If the environment only takes real payments, stop at the payment page and say so.
 - **Nothing secret on camera.** Type test credentials only, and check the frames for tokens, personal emails, and addresses before the file leaves the machine.
-- **One recording per chapter group.** Keep each `tab.run` under about 90 seconds and name the files in order: `<slug>-01-search.mp4`, `<slug>-02-cart.mp4`. A short segment that hangs costs one retake, not the whole journey. Run the segments back to back in one cell so the tab never idles between them; the page state carries over. Return the step counter from each segment and pass it into the next, so the numbering continues.
+- **One recording per chapter group.** Keep each `tab.run` under about 90 seconds and name the files in order: `<slug>-01-search.mp4`, `<slug>-02-cart.mp4`. A short segment that hangs costs one retake, not the whole journey. Run the segments back to back in one cell so the tab never idles between them; the page state carries over. Return the step counter from each segment and pass it into the next, so the numbering continues. Write each segment's step screenshots into its own directory or prefix so its storyboard only reads that segment's frames.
 - **Arm the navigation wait before the click.** A `waitForFunction` started on the old page can hang after the new page loads. Pair the two, then wait for the new page's own signal (its heading, a response via `page.waitForResponse`, the step indicator reading "3 of 5"), then hold 500 ms:
 
   ```javascript
@@ -161,7 +163,7 @@ A predicate that fails is the finding. Do not retune the sampling until it passe
 Before you report, hard-assert the captioned-step bookkeeping:
 
 - `step()` calls == per-step checkpoints == storyboard tiles.
-- Caption numbers on the tiles run `1..N` with no gaps.
+- Caption numbers on the tiles run with no gaps across that artifact's expected range: `1..N` for a single clip, or `<first-step>..<last-step>` for a later chapter whose numbering continues.
 - The workflow table you will post has one row per tile, no more and no less.
 
 If any count or caption number mismatches, fail the run and fix the recording before you cite it. Extra transition probes are fine; silent step loss is not.
@@ -172,8 +174,8 @@ A recording is an artifact like any other. Check it before you cite it.
 
 - `ffprobe -v error -show_entries format=duration:stream=width,height,r_frame_rate -of compact <slug>.mp4`. Duration above zero, size matches the viewport.
 - `read <slug>.mp4` returns a preview grid. `read <slug>.mp4:1.2s` returns one frame. Look at the frames that should show each step.
-- For step-based flows, tile the per-step screenshots: `ffmpeg -v error -y -framerate 1 -i frame-%02d.png -vf "tile=CxR" <slug>.storyboard.png`. For motion-first clips, use the time-sampled grid: `ffmpeg -v error -y -i <slug>.mp4 -vf "fps=12/D,scale=400:-1,tile=4x3" -frames:v 1 <slug>.storyboard.png`. A fixed `fps` on a long run fills the grid from the first seconds only, which is why it is the wrong default for captioned workflows.
-- Read the storyboard back and assert the tile count matches the per-step checkpoints and the caption numbers run `1..N`.
+- For step-based flows, tile the per-step screenshots from that segment only: `ffmpeg -v error -y -framerate 1 -start_number <first-step> -i <segment-dir>/frame-%02d.png -vf "tile=CxR" <segment-slug>.storyboard.png`. Use the first step number that segment wrote (`1` for `frame-01.png`, `6` for `frame-06.png`, and so on), write the storyboard to a segment-specific path, and keep each segment's frames in its own directory or prefix so the command does not read later segments by accident. For motion-first clips, use the time-sampled grid: `ffmpeg -v error -y -i <slug>.mp4 -vf "fps=12/D,scale=400:-1,tile=4x3" -frames:v 1 <slug>.storyboard.png`. A fixed `fps` on a long run fills the grid from the first seconds only, which is why it is the wrong default for captioned workflows.
+- Read the storyboard back and assert the tile count matches the per-step checkpoints and the caption numbers cover that artifact's expected contiguous range.
 - Build a caption strip and read it back: `ffmpeg -v error -y -i <slug>.mp4 -vf "crop=iw:60:0:ih-60,fps=4,tile=1xN" -frames:v 1 <slug>.captions.png`. Every caption must appear in at least one sampled frame. If a caption is missing, fail the run instead of hand-waving the gap.
 - Read the captions themselves for grammar and accuracy. Fix awkward wording before you ship the artifact.
 
@@ -187,7 +189,7 @@ Put the three paths in the reply, then one line per claim: the predicate, its re
 - **Two JS worlds.** `tab.evaluate` and Puppeteer's `page.evaluate` inside `tab.run` do not share globals. The overlay listens for a DOM `evidence:step` event for that reason. Talk to page code through the DOM, not a global.
 - **The contact sheet skips motion.** `recordStart({ contactSheet: true })` keeps only frames that changed past a threshold and can drop every mid-drag frame. It is a quick glance, not the storyboard.
 - **The video clock is not the wall clock.** The recorder emits frames when the screen changes, so video timestamps drift from real time. Timing claims come from the trace.
-- **A file input may only prove itself in the trace.** Headless Chromium cannot show the OS file picker. Count `HTMLInputElement.prototype.click` calls on `type=file` in the init script, read that counter in the per-step probe, and report the step as `trace only (native dialog is outside the browser surface)` when needed.
+- **A file input may only prove itself in the trace.** Headless Chromium cannot show the OS file picker. Count file-input activation in the init script for both trusted user clicks (including label-driven activation) and scripted `HTMLInputElement.prototype.click()` calls, read that counter in the per-step probe, and report the step as `trace only (native dialog is outside the browser surface)` when needed.
 - **Native HTML5 drag has no drag image in headless Chromium.** The node stays put until the drop. The cursor path plus the before and after frames carry the story. Pointer-driven drag libraries render the movement. If a stepped mouse drag does not fire the drop, fall back to `tab.drag(source, target)` and say so in the report. It fires the drag events but jumps.
 - **The overlay shows up in screenshots.** Take pixel-diff baselines without it: `await tab.removeInitScript(overlay.id)` and reload. `addInitScript` returns `{ id }`, not a bare id.
 - **Built-in cursor.** `recordStart(path, { cursor: true })` draws a small cursor. It is hard to follow at review size, which is why the overlay draws its own. Use one or the other, not both.

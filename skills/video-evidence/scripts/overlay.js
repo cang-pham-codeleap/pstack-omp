@@ -34,11 +34,57 @@
     try { store = sessionStorage; } catch {}
     const FILE_INPUT_CLICK_COUNT_KEY = "__ev_file_input_click_count";
     let fileInputClickCount = Number(store?.getItem(FILE_INPUT_CLICK_COUNT_KEY) ?? "0") || 0;
-    const publishFileInputClickCount = () => {
-      document.documentElement.dataset.evFileInputClickCount = String(fileInputClickCount);
-      store?.setItem(FILE_INPUT_CLICK_COUNT_KEY, String(fileInputClickCount));
+    const publishFileInputClickCount = (count, doc = document, storage = store) => {
+      fileInputClickCount = count;
+      doc.documentElement.dataset.evFileInputClickCount = String(count);
+      storage?.setItem(FILE_INPUT_CLICK_COUNT_KEY, String(count));
     };
-    publishFileInputClickCount();
+    const countFileInputActivation = (doc = document) => {
+      const root = doc.documentElement;
+      const nextCount = Number(root?.dataset.evFileInputClickCount ?? "0") + 1;
+      let docStore = null;
+      try { docStore = doc.defaultView?.sessionStorage ?? null; } catch {}
+      if (root) root.dataset.evFileInputClickCount = String(nextCount);
+      try { docStore?.setItem(FILE_INPUT_CLICK_COUNT_KEY, String(nextCount)); } catch {}
+      if (doc === document) fileInputClickCount = nextCount;
+      return nextCount;
+    };
+    const fileInputFrom = (target) => {
+      if (target instanceof HTMLInputElement) return target.type === "file" && !target.disabled ? target : null;
+      if (!(target instanceof Element)) return null;
+      const nestedInput = target.closest('input[type="file"]:not([disabled])');
+      if (nestedInput instanceof HTMLInputElement) return nestedInput;
+      const label = target.closest("label");
+      if (!(label instanceof HTMLLabelElement)) return null;
+      const control = label.control;
+      if (control instanceof HTMLInputElement && control.type === "file" && !control.disabled) return control;
+      if (label.htmlFor) {
+        const referenced = document.getElementById(label.htmlFor);
+        if (referenced instanceof HTMLInputElement && referenced.type === "file" && !referenced.disabled) return referenced;
+      }
+      return null;
+    };
+    publishFileInputClickCount(fileInputClickCount);
+    let pendingTrustedFileInput = null;
+    addEventListener("click", (event) => {
+      if (!event.isTrusted) return;
+      const input = fileInputFrom(event.target);
+      if (!input) return;
+      if (event.target === input) {
+        pendingTrustedFileInput = null;
+        queueMicrotask(() => {
+          if (!event.defaultPrevented) countFileInputActivation(input.ownerDocument ?? document);
+        });
+        return;
+      }
+      if (pendingTrustedFileInput === input) return;
+      pendingTrustedFileInput = input;
+      queueMicrotask(() => {
+        if (pendingTrustedFileInput !== input) return;
+        pendingTrustedFileInput = null;
+        if (!event.defaultPrevented) countFileInputActivation(input.ownerDocument ?? document);
+      });
+    }, true);
     const clickPrototype = HTMLInputElement.prototype;
     let clickOwner = clickPrototype;
     while (clickOwner && !Object.prototype.hasOwnProperty.call(clickOwner, "click")) clickOwner = Object.getPrototypeOf(clickOwner);
@@ -50,16 +96,8 @@
     }
     if (!clickOwner.__ev_wrapped__ && clickDescriptor?.configurable) {
       const wrappedClick = function (...args) {
-        if (this?.type === "file" && !this.disabled) {
-          const countKey = "__ev_file_input_click_count";
-          const root = this.ownerDocument?.documentElement;
-          let nextCount = Number(root?.dataset.evFileInputClickCount ?? "0") + 1;
-          try {
-            this.ownerDocument?.defaultView?.sessionStorage?.setItem(countKey, String(nextCount));
-          } catch {
-            nextCount = Number(root?.dataset.evFileInputClickCount ?? "0") + 1;
-          }
-          if (root) root.dataset.evFileInputClickCount = String(nextCount);
+        if (this?.type === "file" && !this.disabled && pendingTrustedFileInput !== this) {
+          countFileInputActivation(this.ownerDocument ?? document);
         }
         return originalClick.apply(this, args);
       };
