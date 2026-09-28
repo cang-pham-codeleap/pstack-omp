@@ -51,10 +51,11 @@
     if (!clickOwner.__ev_wrapped__) {
       const wrappedClick = function (...args) {
         if (this?.type === "file" && !this.disabled) {
+          const countKey = "__ev_file_input_click_count";
           const root = this.ownerDocument?.documentElement;
           let nextCount = Number(root?.dataset.evFileInputClickCount ?? "0") + 1;
           try {
-            this.ownerDocument?.defaultView?.sessionStorage?.setItem(FILE_INPUT_CLICK_COUNT_KEY, String(nextCount));
+            this.ownerDocument?.defaultView?.sessionStorage?.setItem(countKey, String(nextCount));
           } catch {
             nextCount = Number(root?.dataset.evFileInputClickCount ?? "0") + 1;
           }
