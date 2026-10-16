@@ -207,6 +207,6 @@ When the audience is a PM, a stakeholder, or a release note rather than a review
 - **Captions in the story's words.** "Pay with a saved card", never a selector or a state value.
 - **A clean screen.** No devtools and no probe output. Seed data that reads like real data, not `test123`.
 - **A bigger fixed viewport.** 1440x900 or 1920x1080, the same for every re-record.
-- **A GIF where MP4 does not play.** `ffmpeg -v error -y -i <slug>.mp4 -vf "fps=10,scale=960:-1:flags=lanczos" <slug>.gif`.
+- **A GIF for the PR body.** GitHub does not play a committed MP4. `skill://poteto-mode/scripts/pr-evidence` turns each video into a GIF and embeds it, so pass the MP4 as is.
 
 For a narrated walkthrough or a polished feature reveal, HyperFrames (`npx skills add heygen-com/hyperframes`, its `/pr-to-video` workflow) renders HTML compositions to MP4 deterministically and can place the raw recording inside a designed scene. A presentation cut is not proof. The evidence is still the raw recording and its trace, so link both next to it.
