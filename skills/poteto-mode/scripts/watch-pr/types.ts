@@ -188,6 +188,7 @@ export type PrSnapshot =
       readonly ci: CiState;
       readonly reviewAutomationRunning: boolean;
       readonly awaitedReviews: readonly AwaitedReview[];
+      readonly staleAwaitedChangeRequest: boolean;
     };
 export interface ReadyPr {
   readonly kind: "ready-pr";

@@ -104,6 +104,26 @@ export async function readSnapshot(args: {
             },
     };
   });
+  // GitHub keeps an awaited bot's CHANGES_REQUESTED until that bot reviews
+  // again, so after a fix push it is a pending re-review, not a stop.
+  const latestDecisive = new Map<string, T.PrReview>();
+  for (const review of reviews)
+    if (
+      review.authorLogin !== null &&
+      (review.state === "APPROVED" || review.state === "CHANGES_REQUESTED")
+    )
+      latestDecisive.set(canonicalReviewer(review.authorLogin), review);
+  const awaitedKeys = new Set(awaited.map(canonicalReviewer));
+  const requesters = [...latestDecisive].filter(
+    ([, review]) => review.state === "CHANGES_REQUESTED"
+  );
+  const staleAwaitedChangeRequest =
+    facts.reviewDecision === "CHANGES_REQUESTED" &&
+    requesters.length > 0 &&
+    requesters.every(
+      ([key, review]) =>
+        awaitedKeys.has(key) && review.commitOid !== facts.headRefOid
+    );
   const checks = await resolveChecks(args.reader, args.context);
   const failed = nonEmpty(
     checks.checks.filter(
@@ -175,6 +195,7 @@ export async function readSnapshot(args: {
     threads,
     ci,
     awaitedReviews,
+    staleAwaitedChangeRequest,
     reviewAutomationRunning: checks.checks.some(
       (check) =>
         check.kind === "pending" &&
@@ -255,7 +276,8 @@ function gateReason(
   if (row.kind === "merged") return null;
   if (row.kind === "closed") return "closed-without-merge";
   if (row.facts.isDraft && !allowDraft) return "draft-pr";
-  return row.facts.reviewDecision === "CHANGES_REQUESTED"
+  return row.facts.reviewDecision === "CHANGES_REQUESTED" &&
+    !(row.kind === "open" && row.staleAwaitedChangeRequest)
     ? "changes-requested"
     : null;
 }
@@ -295,8 +317,10 @@ function readyContribution(
     gateReason(row, allowDraft) !== null
   )
     return null;
-  const reviewDecision = row.facts.reviewDecision;
-  if (reviewDecision === "CHANGES_REQUESTED") return null;
+  const reviewDecision =
+    row.facts.reviewDecision === "CHANGES_REQUESTED"
+      ? "REVIEW_REQUIRED"
+      : row.facts.reviewDecision;
   return {
     kind: "ready-pr",
     context: row.context,

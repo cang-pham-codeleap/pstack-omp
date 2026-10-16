@@ -335,6 +335,30 @@ describe("await review bots", () => {
     });
   });
 
+  it("waits for re-review when only the awaited bot's CHANGES_REQUESTED is on an old head", async () => {
+    const options = polling({ awaitReview: ["review-bot[bot]"], reviewTimeout: 20 });
+    const facts = { reviewDecision: "CHANGES_REQUESTED" } as const;
+    const botOld = review("review-bot[bot]", "old", "CHANGES_REQUESTED");
+
+    const stale = await watch(fakeReader({ facts, reviews: [botOld] }), steppedClock().clock, options);
+    expect(stale.events[0]).toMatchObject({ kind: "AWAITING_REVIEW" });
+    expect(stale.verdict).toMatchObject({ kind: "REVIEW_TIMEOUT", exitCode: 9 });
+
+    const onHead = await watch(
+      fakeReader({ facts, reviews: [review("review-bot[bot]", "head", "CHANGES_REQUESTED")] }),
+      steppedClock().clock,
+      options
+    );
+    expect(onHead.verdict).toMatchObject({ kind: "BLOCKER", exitCode: 6 });
+
+    const human = await watch(
+      fakeReader({ facts, reviews: [botOld, review("alice", "old", "CHANGES_REQUESTED")] }),
+      steppedClock().clock,
+      options
+    );
+    expect(human.verdict).toMatchObject({ kind: "BLOCKER", exitCode: 6 });
+  });
+
   it("ends with exit 8 when the head is not the pinned SHA", async () => {
     const { verdict } = await watch(
       fakeReader(),
