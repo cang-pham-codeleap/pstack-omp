@@ -76,6 +76,39 @@ describe("checks fallback chain", () => {
     );
     expect(reader.calls).toEqual(["checksFastPath", "checkRollupPage:null"]);
   });
+
+  it("groups superseded runs by workflow id and event, not display name", async () => {
+    const inRun = <C extends object>(
+      check: C,
+      identity: string,
+      runId: number,
+      checkId: number
+    ): C => ({ ...check, workflowRun: { identity, runId, checkId } });
+    const reader = fakeReader({
+      fastPath: { kind: "unusable", exitCode: 8, stderr: "" },
+      rollupPages: [
+        {
+          checks: [
+            inRun(failedCheck("status-check"), "7:pull_request", 100, 1),
+            inRun(failedCheck("only-old"), "7:pull_request", 100, 2),
+            inRun(failedCheck("status-check"), "7:pull_request", 200, 3),
+            inRun(passingCheck("status-check"), "7:pull_request", 200, 4),
+            inRun(failedCheck("same-name-other-file"), "8:pull_request", 50, 5),
+            inRun(failedCheck("push-run"), "7:push", 90, 6),
+            failedCheck("external"),
+          ],
+          endCursor: null,
+        },
+      ],
+    });
+    const read = await resolveChecks(reader, context);
+    expect(read.checks.map((check) => `${check.name}:${check.kind}`)).toEqual([
+      "status-check:passed",
+      "same-name-other-file:failed",
+      "push-run:failed",
+      "external:failed",
+    ]);
+  });
 });
 
 describe("rollup node mapping", () => {
@@ -99,6 +132,30 @@ describe("rollup node mapping", () => {
         })
       ).toMatchObject({ kind, reportedState });
     }
+  });
+
+  it("reads the workflow identity from the CheckRun's workflow run", () => {
+    expect(
+      mapRollupNode({
+        __typename: "CheckRun",
+        databaseId: 6,
+        name: "ci",
+        status: "COMPLETED",
+        conclusion: "CANCELLED",
+        detailsUrl: "https://github.com/o/r/actions/runs/5/job/6",
+        checkSuite: {
+          workflowRun: {
+            databaseId: 5,
+            event: "pull_request",
+            workflow: { databaseId: 7, name: "Check Pull Request" },
+          },
+        },
+      })
+    ).toMatchObject({
+      kind: "failed",
+      workflow: "Check Pull Request",
+      workflowRun: { identity: "7:pull_request", runId: 5, checkId: 6 },
+    });
   });
 
   it("classifies an in-progress Code Review Gate from the rollup as the gate", () => {

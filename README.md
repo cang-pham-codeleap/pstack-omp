@@ -41,7 +41,7 @@ two steps:
 
 new here? the [pstack guide](./docs/guide/README.md) walks you through a first real task, from setup and prompting through verification and overnight runs.
 
-that's it. the other skills are situational; the mode skill uses them for you as needed. out of the box the mode splits work by role: code delegates (feature, refactoring, bug fix, perf, hillclimb) spawn `pstack-code`, while the hardest changes, prose, and judgment spawn `pstack-judgment`. review panels fan out one `pstack-panel-1` through `pstack-panel-4` agent per configured entry. each role's model comes from the seven `pstack-*` entries in `~/.omp/agent/config.yml`, and runs on your session model until you point it elsewhere. [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md) changes any of it.
+that's it. the other skills are situational; the mode skill uses them for you as needed. out of the box the mode splits work by role: code delegates (feature, refactoring, bug fix, perf, hillclimb) spawn `pstack-code`, while the hardest changes, prose, and judgment spawn `pstack-judgment`. review panels fan out one `pstack-panel-1` through `pstack-panel-4` agent per configured entry. each role's model comes from the eight `pstack-*` entries in `~/.omp/agent/config.yml`, and runs on your session model until you point it elsewhere. [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md) changes any of it.
 
 ## usage
 
@@ -79,6 +79,7 @@ morning.
 | [authoring a skill](./skills/poteto-mode/playbooks/authoring-a-skill.md) | writing or editing a SKILL.md. |
 | [eval](./skills/poteto-mode/playbooks/eval.md) | test how a skill or prompt change affects agent behavior, blinded. |
 | [babysit](./skills/poteto-mode/playbooks/babysit.md) | drive a pr or a stack to merge-ready: conflicts, review threads, ci. |
+| [ship to green](./skills/poteto-mode/playbooks/ship-to-green.md) | open a pr and carry it through ci, copilot review, and the repo's approving review with no human gate in the loop. stops before the merge. |
 | [shipping](./skills/poteto-mode/playbooks/shipping.md) | independently verify a green stack, then land the contiguous verified run bottom-up through github by default or origin when available. |
 | [autonomous run](./skills/poteto-mode/playbooks/autonomous-run.md) | drive a long task to completion without stopping. |
 | [orchestrate](./skills/poteto-mode/playbooks/orchestrate.md) | a standing project handed to one coordinator chat: multi-day, many stacked prs, fleets of subagents. |
@@ -133,7 +134,7 @@ the full rules and playbooks live in [`skills/poteto-mode/SKILL.md`](./skills/po
 | [`/skill:swarm`](./skills/swarm/SKILL.md) | you want N parallel workers across different slices or races, then one aggregated report. |
 | [`/skill:interrogate`](./skills/interrogate/SKILL.md) | you have a diff and want several different models to try to break it, including a strict code-quality lens. |
 | [`/skill:automate-me`](./skills/automate-me/SKILL.md) | you want your own `-mode` skill, drafted from how you've actually worked. |
-| [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md) | you want to pick which models pstack uses per role. probes what this machine can spawn and merges the seven `pstack-code`, `pstack-judgment`, `pstack-tooling`, and `pstack-panel-1..4` entries into `~/.omp/agent/config.yml`'s `modelRoles` and `task.agentModelOverrides`, leaving every other key untouched. |
+| [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md) | you want to pick which models pstack uses per role. probes what this machine can spawn and merges the eight `pstack-code`, `pstack-judgment`, `pstack-tooling`, `pstack-panel-1..4`, and `pstack-watch` entries into `~/.omp/agent/config.yml`'s `modelRoles` and `task.agentModelOverrides`, leaving every other key untouched. |
 | [`/skill:reflect`](./skills/reflect/SKILL.md) | a long task landed and you want the recipe captured as a skill edit. |
 | [`/skill:teach`](./skills/teach/SKILL.md) | you want to actually understand a change or subsystem, not just have it summarized. runs how + why and weaves one plain explanation, built up diagram by diagram. |
 | [`/skill:tdd`](./skills/tdd/SKILL.md) | you're fixing a bug and there's a cheap local test path. write the failing test first, then the fix. |
@@ -143,6 +144,7 @@ the full rules and playbooks live in [`skills/poteto-mode/SKILL.md`](./skills/po
 | [`/skill:show-me-your-work`](./skills/show-me-your-work/SKILL.md) | you want a reviewable decision trail. logs decisions to a tsv you can commit. |
 | [`/skill:create-verification-skill`](./skills/create-verification-skill/SKILL.md) | your project has no scripted way to prove app behavior. generates a project-local verify skill with a feature map, for any language or platform. |
 | [`/skill:maintain-verification-skill`](./skills/maintain-verification-skill/SKILL.md) | your verify skill's feature map has drifted from the app. source wave + one live pass, at most one PR of proven corrections. |
+| [`/skill:ticket-intake`](./skills/ticket-intake/SKILL.md) | a Jira ticket is missing information and agents keep asking mid-work. brainstorms the target once, writes the answers back as the ticket description (the ticket is the spec), and stamps it ready with a checkable hash. |
 | [`/skill:video-evidence`](./skills/video-evidence/SKILL.md) | you want to see a change, not just read about it: scroll, drag and drop, animation, a stepper, a search-to-checkout journey, a bug repro, or a demo for a PM. records the real browser run with captions and a big cursor, plus a storyboard and a state trace. optional, on request. |
 | [`/skill:unslop`](./skills/unslop/SKILL.md) | you're cleaning up writing. removes AI tells. |
 | [`/skill:bro`](./skills/bro/SKILL.md) | you want the last message restated in plain human language, no jargon. |
@@ -199,7 +201,7 @@ automate-me:       /skill:automate-me
 
 ## the `poteto-agent` and Comment Sicko subagents
 
-pstack also ships a subagent that runs poteto's style end to end. spawn it from a parent agent with the `task` tool as [`agent: "poteto-agent"`](./agents/poteto-agent.md). it reads `poteto-mode` in full, including its inline principles index, before doing any work. reach for it when a step names no agent. the seven `pstack-*` role agents are model carriers and don't read the skill, so a step that names one carries the scope its delegate needs.
+pstack also ships a subagent that runs poteto's style end to end. spawn it from a parent agent with the `task` tool as [`agent: "poteto-agent"`](./agents/poteto-agent.md). it reads `poteto-mode` in full, including its inline principles index, before doing any work. reach for it when a step names no agent. the eight `pstack-*` role agents are model carriers and don't read the skill, so a step that names one carries the scope its delegate needs.
 
 [`/skill:poteto-mode`](./skills/poteto-mode/SKILL.md) and [`agent: "poteto-agent"`](./agents/poteto-agent.md) route through the same wrapper.
 
@@ -260,7 +262,7 @@ omp already has a great plan mode which works great with pstack. but personally,
 
 type [`/skill:automate-me`](./skills/automate-me/SKILL.md). it mines your recent transcripts, drafts a `<your-name>-mode` skill from how you've actually worked, and routes through pstack underneath. you keep pstack as the base and end up with your own routing skill alongside `poteto-mode`.
 
-models are configurable too. type [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md). it probes the models this machine can actually spawn and maps each role (code, judgment, tooling, the review panels) to one, writing the seven `pstack-*` entries into `~/.omp/agent/config.yml` without touching your other keys. a role runs on your session model until you set it, so you override only what you want.
+models are configurable too. type [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md). it probes the models this machine can actually spawn and maps each role (code, judgment, tooling, the review panels, the PR watcher) to one, writing the eight `pstack-*` entries into `~/.omp/agent/config.yml` without touching your other keys. a role runs on your session model until you set it, so you override only what you want.
 
 ## license
 

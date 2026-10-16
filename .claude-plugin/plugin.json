@@ -1,7 +1,7 @@
 {
   "name": "pstack",
   "displayName": "pstack",
-  "version": "0.16.1",
+  "version": "0.18.0",
   "description": "if you want to go fast, go deep first. pstack helps you write less, but higher quality code. rigorous agent workflows you can parallelize with confidence.",
   "author": {
     "name": "Lauren Tan"
@@ -35,6 +35,7 @@
     "./claude/agents/pstack-panel-2.md",
     "./claude/agents/pstack-panel-3.md",
     "./claude/agents/pstack-panel-4.md",
-    "./claude/agents/pstack-tooling.md"
+    "./claude/agents/pstack-tooling.md",
+    "./claude/agents/pstack-watch.md"
   ]
 }

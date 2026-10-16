@@ -75,6 +75,16 @@ Babysit watches the PR with a bundled watcher and takes blockers in order: confl
 
 Babysit stops at merge-ready. It never merges, even with everything green, because merging is a different decision.
 
+## Carry one PR to done with Ship to green
+
+Babysit waits until you ask. When you want the whole loop for one PR, ask for it up front:
+
+```text
+/skill:poteto-mode build this, open a pr, and ship it to green.
+```
+
+The [Ship to green playbook](../../skills/poteto-mode/playbooks/ship-to-green.md) keeps the main agent as a coordinator. It runs ticket intake first when the Jira ticket is not `agent-ready` or was edited after intake. Then each phase goes to a subagent that reports back. A Builder builds, puts screenshot or video evidence in the PR body, and opens the PR. A Watcher on the cheap `pstack-watch` role waits on CI and reviews for the exact head that was pushed, with timeouts taken from the repo's Actions history (`watch-pr eta`). A Triager proposes fix or dismiss per review thread. A Fixer commits, replies, resolves, and reads each thread's resolved state back from GitHub. Last, it triggers the repo's own approving review (for example `/review`) once CI and Copilot are settled. Findings in security, auth, billing, data, or migration code are fixed or the run stops. They are never dismissed. Hard caps end the loop at 2 Copilot reviews, 2 approving runs, 3 fixes per failing check, and the run budget `eta` derives from the repo's CI and review times. The counts are read from GitHub, not kept by the agent. It never merges. Several tickets at once run one owner per ticket, at most 4 live, after one batched intake round.
+
 ## Land the stack with Shipping
 
 Green is not the same as safe. When you're ready to land, say so:

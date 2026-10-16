@@ -79,6 +79,10 @@ describe("parseArgs", () => {
       timeout: 0,
       maxQueryErrors: 3,
       allowDraft: true,
+      awaitReview: [],
+      reviewTimeout: 600,
+      since: null,
+      head: null,
     });
     expect(parsed.pretty).toBe(true);
   });
@@ -136,6 +140,7 @@ describe("rendering", () => {
         },
       },
     ],
+    ship: [],
   } satisfies WatcherVerdict;
 
   it("emits compact valid JSON by default", () => {
@@ -210,6 +215,61 @@ describe("main", () => {
       blocker: {
         kind: "failing-checks",
         ci: { kind: "ci-github-rejected" },
+      },
+    });
+  });
+
+  it("eta times runs from the latest attempt and recommends timeouts", async () => {
+    const run = (
+      workflowName: string,
+      seconds: number,
+      event = "pull_request",
+      status = "completed",
+      conclusion = "success"
+    ) => ({
+      workflowName,
+      event,
+      status,
+      conclusion,
+      startedAt: "2026-10-01T05:00:00Z",
+      updatedAt: new Date(Date.parse("2026-10-01T05:00:00Z") + seconds * 1_000).toISOString(),
+    });
+    const copilot = (seconds: number) =>
+      run("Running Copilot Code Review", seconds, "dynamic");
+    const reader = fakeReader({
+      workflowRuns: [
+        run("CI", 300),
+        run("CI", 100),
+        run("CI", 200),
+        run("CI", 400),
+        run("CI", 9_999, "pull_request", "completed", "failure"),
+        run("CI", 9_999, "pull_request", "in_progress", ""),
+        run("Deploy", 9_999, "push"),
+        run("Deploy", 9_999, "push"),
+        run("Deploy", 9_999, "push"),
+        copilot(90),
+        copilot(60),
+        copilot(120),
+      ],
+    });
+    const harness = testRuntime(reader);
+    expect(
+      await main(["eta", "--repo", "o/r", "--limit", "12"], harness.runtime)
+    ).toBe(0);
+    expect(reader.calls).toEqual(["workflowRuns:o/r:12"]);
+    expect(JSON.parse(harness.stdout[0])).toEqual({
+      repo: "o/r",
+      sampled: 12,
+      workflows: {
+        CI: { n: 4, p50: 200, p90: 400 },
+        Deploy: { n: 3, p50: 9_999, p90: 9_999 },
+        "Running Copilot Code Review": { n: 3, p50: 90, p90: 120 },
+      },
+      recommended: {
+        ciTimeout: 800,
+        copilotReviewTimeout: 240,
+        approverReviewTimeout: 900,
+        runBudget: 3 * (800 + 240) + 2 * 900,
       },
     });
   });
