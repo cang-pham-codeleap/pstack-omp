@@ -61,7 +61,7 @@ const missingLines = (missing: T.NonEmpty<T.MissingReview>): string =>
   missing
     .map(
       (item) =>
-        `awaiting=${item.login} pr=${item.pr.number} head=${item.headSha ?? "None"} reviewed=${item.reviewedSha ?? "None"}`
+        `awaiting=${item.login} pr=${item.pr.number} head=${item.headSha ?? "None"} reviewed=${item.reviewedSha ?? "None"}${item.review === null ? "" : ` state=${item.review.state} submittedAt=${item.review.submittedAt ?? "None"} body=${item.review.body.split(/\r?\n/, 1)[0]?.slice(0, 180) ?? ""}`}`
     )
     .join("\n");
 function threadLine(thread: T.ReviewThread): string {
@@ -84,11 +84,13 @@ type StatusQueryBlocker = {
   readonly failure: { readonly detail: string };
 };
 function renderBlocker(blocker: T.MergeBlocker | StatusQueryBlocker): string {
+  const head = blocker.kind === "status-query" ? [] : [`head=${blocker.headSha ?? "None"}`];
   switch (blocker.kind) {
     case "merge-conflicts":
       return [
         "BLOCKER: merge-conflicts",
         `pr=${blocker.pr.number}`,
+        ...head,
         `mergeable=${blocker.facts.mergeable}`,
         `mergeStateStatus=${blocker.facts.mergeStateStatus}`,
         "action=resolve merge conflicts before waiting for CI",
@@ -97,6 +99,7 @@ function renderBlocker(blocker: T.MergeBlocker | StatusQueryBlocker): string {
       return [
         "BLOCKER: review-threads",
         `pr=${blocker.pr.number}`,
+        ...head,
         `unresolved=${blocker.threads.length}`,
         ...blocker.threads.map(threadLine),
       ].join("\n");
@@ -114,6 +117,7 @@ function renderBlocker(blocker: T.MergeBlocker | StatusQueryBlocker): string {
       return [
         "BLOCKER: failing-checks",
         `pr=${blocker.pr.number}`,
+        ...head,
         `failed=${failed.length}`,
         ...details,
       ].join("\n");
@@ -128,9 +132,23 @@ function renderBlocker(blocker: T.MergeBlocker | StatusQueryBlocker): string {
       return [
         `BLOCKER: ${blocker.reason}`,
         `pr=${blocker.pr.number}`,
+        ...head,
+        ...blocker.reviews.flatMap((review) =>
+          review.review === null
+            ? []
+            : [`review=${review.login} state=${review.review.state} reviewed=${review.reviewedOid ?? "None"}`]
+        ),
         `action=${action}`,
       ].join("\n");
     }
+    case "head-changed":
+      return [
+        "BLOCKER: head-changed",
+        `pr=${blocker.pr.number}`,
+        `expected=${blocker.expected}`,
+        ...head,
+        "action=someone else pushed; stop and report, or re-arm with the new head if the push was yours",
+      ].join("\n");
     case "status-query":
       return [
         "BLOCKER: status-query",
@@ -149,7 +167,14 @@ export function renderPretty(verdict: T.WatcherVerdict): string {
     case "QUEUE":
       return `QUEUE: captured ${verdict.queue.length} PR${verdict.queue.length === 1 ? "" : "s"} bottom-to-top: ${verdict.queue.map((pr) => `#${pr.number}`).join(",")}\n`;
     case "STATUS":
-      return renderStatusTable(verdict.rows);
+      return verdict.terminal
+        ? `${renderStatusTable(verdict.rows)}${verdict.ship
+            .map(
+              (counts) =>
+                `ship pr=${counts.pr.number} startedAt=${counts.startedAt} copilotReviews=${counts.copilotReviews} approverRuns=${counts.approverRuns ?? "None"} ciFixes=${Object.entries(counts.ciFixes).map(([name, count]) => `${name}:${count}`).join(",") || "None"}\n`
+            )
+            .join("")}`
+        : renderStatusTable(verdict.rows);
     case "WAITING":
       return verdict.reason.kind === "pending-checks"
         ? `WAITING: frontier=#${verdict.frontier.number}; ${verdict.reason.pending.length} check${verdict.reason.pending.length === 1 ? "" : "s"} pending\n`
@@ -163,7 +188,7 @@ export function renderPretty(verdict: T.WatcherVerdict): string {
     case "READY": {
       const detail =
         verdict.scope.kind === "single" && verdict.scope.pr.kind === "ready-pr"
-          ? `\nmergeStateStatus=${verdict.scope.pr.proof.ci.github.mergeStateStatus}\nreviewDecision=${verdict.scope.pr.proof.gate.reviewDecision}\nisDraft=${verdict.scope.pr.proof.gate.draft === "draft-allowed"}${verdict.scope.pr.proof.gate.draft === "draft-allowed" ? "\nnote=draft allowed (--allow-draft); leave draft \u2014 do not mark ready" : ""}`
+          ? `\nhead=${verdict.scope.pr.headSha ?? "None"}\nmergeStateStatus=${verdict.scope.pr.proof.ci.github.mergeStateStatus}\nreviewDecision=${verdict.scope.pr.proof.gate.reviewDecision}\nisDraft=${verdict.scope.pr.proof.gate.draft === "draft-allowed"}${verdict.scope.pr.proof.gate.draft === "draft-allowed" ? "\nnote=draft allowed (--allow-draft); leave draft \u2014 do not mark ready" : ""}${verdict.scope.pr.proof.reviews.map((review) => `\nreview=${review.login} state=${review.review?.state ?? "None"} submittedAt=${review.review?.submittedAt ?? "None"}`).join("")}`
           : "";
       return `READY: no merge conflicts, no unresolved review threads, no failing or pending checks${detail}\n`;
     }

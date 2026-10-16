@@ -9,6 +9,7 @@ import type {
   PullRequestFacts,
   Repository,
   ReviewThread,
+  ShipActivity,
   RollupPage,
   WorkflowRun,
 } from "./types.ts";
@@ -25,6 +26,7 @@ export interface FakeReaderOptions {
   readonly origin?: Repository | null;
   readonly current?: PrContext;
   readonly workflowRuns?: readonly WorkflowRun[];
+  readonly shipActivity?: ShipActivity;
 }
 
 export function passingCheck(name = "ci"): Check {
@@ -121,6 +123,17 @@ export function fakeReader(
     async reviews() {
       calls.push("reviews");
       return options.reviews ?? [];
+    },
+    async shipActivity() {
+      calls.push("shipActivity");
+      return (
+        options.shipActivity ?? {
+          createdAt: "2026-07-26T00:00:00Z",
+          viewerLogin: "agent",
+          comments: [],
+          commits: [{ oid: "head", failedChecks: [] }],
+        }
+      );
     },
     async replyToThread(threadId, body) {
       calls.push(`reply:${threadId}:${body}`);

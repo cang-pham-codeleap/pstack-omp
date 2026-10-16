@@ -58,8 +58,8 @@ The agent derives it from the repo and does not ask the user: slug, branch, base
 
 - Every required section is present and has real content. `N/A`, `TBD`, `-`, and an empty body do not count, except `None` in Breaking changes and Stakeholder validation.
 - No `[OPEN]`, `TBD`, or `???` anywhere in the description. Use `[OPEN]` for a question still unanswered.
-- Each Decisions line reads `D<n>: question -> answer (source: user|default|ticket, YYYY-MM-DD)`.
-- Readiness is tied to the description hash. Any later edit makes the ticket not ready. The `agent-ready` label alone proves nothing; recompute with `--expect=<hash>`.
+- Each Decisions line reads `D<n>: question -> answer (source: user|default|ticket, YYYY-MM-DD)`, with text on both sides of `->`. A Decisions section with no decisions holds exactly `None` and nothing else.
+- Readiness is tied to the description hash. Any later edit makes the ticket not ready. The `agent-ready` label alone proves nothing; recompute with `--expect=<hash>`, taking the hash from the newest `Intake complete` comment.
 
 The checker tests structure, not meaning. A wrong default that is well formed passes, so every default stays visible as `source: default`.
 

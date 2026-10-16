@@ -39,7 +39,7 @@ const KNOWN = new Set([...COMMON, ...Object.values(TYPES).flat(), ...Object.valu
 
 const PLACEHOLDER = /^(n\/?a|none|tbd|-)$/i;
 const OPEN_MARKER = /\[OPEN\]|\bTBD\b|\?\?\?/i;
-const DECISION_LINE = /^[-*\s]*D\d+:.+\(source:\s*(user|default|ticket),\s*\d{4}-\d{2}-\d{2}\)\s*$/;
+const DECISION_LINE = /^[-*\s]*D\d+:\s*(?!->)\S.*?->\s*(?!\(source:)\S.*\(source:\s*(user|default|ticket),\s*\d{4}-\d{2}-\d{2}\)\s*$/;
 
 export function normalizeDescription(markdown) {
   return markdown
@@ -115,7 +115,7 @@ export function checkReady(markdown, { type, expectHash } = {}) {
     .filter(line => OPEN_MARKER.test(line));
 
   const decisions = sections.get('decisions');
-  if (decisions !== undefined && !/^none\b/i.test(decisions)) {
+  if (decisions !== undefined && decisions.trim().toLowerCase() !== 'none') {
     problems.badDecisions = decisions.split('\n').filter(line => line.trim() && !DECISION_LINE.test(line));
   }
 

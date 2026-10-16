@@ -10,7 +10,6 @@ import {
   GhGitHubReader,
   WatcherQueryError,
   discoverStack,
-  gitCommonDir,
   resolveContext,
 } from "./github.ts";
 import {
@@ -21,7 +20,6 @@ import {
   verdictFactory,
   type WatchClock,
 } from "./policy.ts";
-import { updateShipState } from "./ship-state.ts";
 import { renderJson, renderPretty } from "./render.ts";
 import type * as T from "./types.ts";
 import { nonEmpty, parsePrNumber } from "./types.ts";
@@ -33,6 +31,7 @@ export interface CliOptions {
   readonly stackPrs: readonly T.PrNumber[];
   readonly statusOnly: boolean;
   readonly pretty: boolean;
+  readonly approverCommand: string | null;
   readonly polling: T.PollingOptions;
 }
 function positiveNumber(value: string): number {
@@ -68,6 +67,16 @@ function stackPrList(value: string): T.NonEmpty<T.PrNumber> {
   if (parsed === null) throw new InvalidArgumentError("cannot be empty");
   return parsed;
 }
+function isoTime(value: string): string {
+  if (Number.isNaN(Date.parse(value)))
+    throw new InvalidArgumentError("must be an ISO 8601 time");
+  return value;
+}
+function commitSha(value: string): string {
+  if (!/^[0-9a-f]{7,40}$/i.test(value))
+    throw new InvalidArgumentError("must be a 7 to 40 character commit SHA");
+  return value;
+}
 interface RawOptions {
   readonly owner?: string;
   readonly repo?: string;
@@ -83,6 +92,9 @@ interface RawOptions {
   readonly allowDraft: boolean;
   readonly awaitReview: readonly string[];
   readonly reviewTimeout: number;
+  readonly since?: string;
+  readonly head?: string;
+  readonly approverCommand?: string;
   readonly pretty: boolean;
 }
 export function parseArgs(
@@ -91,7 +103,7 @@ export function parseArgs(
 ): CliOptions {
   const program = new Command("watch-pr")
     .description(
-      "Watch one pull request, a connected stack, or an immutable queued stack.\nJSON (NDJSON while polling) is the default; --pretty renders human text.\nSubcommands: resolve-thread (reply and resolve a review thread), ship-state (persist ship-to-green counters), eta (typical workflow durations from Actions history). Run each with --help."
+      "Watch one pull request, a connected stack, or an immutable queued stack.\nJSON (NDJSON while polling) is the default; --pretty renders human text.\n--status-only also reports ship counts derived from GitHub: Copilot reviews, approver runs, CI-fix pushes per check, and startedAt.\nSubcommands: resolve-thread (reply and resolve a review thread), eta (typical workflow durations and recommended timeouts from Actions history). Run each with --help."
     )
     .configureOutput({ writeOut: io.stdout, writeErr: io.stderr })
     .exitOverride()
@@ -134,7 +146,7 @@ export function parseArgs(
     )
     .option(
       "--await-review <login>",
-      "hold READY until this review bot has reviewed the head commit; repeatable",
+      "hold READY until this reviewer has reviewed the head commit; any login other than Copilot must APPROVE or REQUEST_CHANGES; repeatable",
       reviewerLogin,
       []
     )
@@ -145,8 +157,22 @@ export function parseArgs(
       600
     )
     .option(
+      "--since <iso>",
+      "count only awaited reviews submitted after this time (the approver trigger)",
+      isoTime
+    )
+    .option(
+      "--head <sha>",
+      "expected head commit; any other head ends with exit 8 (single PR only)",
+      commitSha
+    )
+    .option(
+      "--approver-command <text>",
+      "with --status-only, count your PR comments that start with this command"
+    )
+    .option(
       "--status-only",
-      "print one status table (with awaited review state) and exit 0",
+      "print one status table (with awaited review state and ship counts) and exit 0",
       false
     )
     .option("--allow-draft", "do not treat a draft as a merge gate", false)
@@ -157,6 +183,8 @@ export function parseArgs(
     program.error("error: --stack-prs requires --queued-stack");
   if (raw.awaitReview.length > 0 && raw.queuedStack)
     program.error("error: --await-review does not support --queued-stack");
+  if (raw.head !== undefined && (raw.stack || raw.queuedStack))
+    program.error("error: --head requires a single PR");
   return {
     owner: raw.owner ?? null,
     repo: raw.repo ?? null,
@@ -165,6 +193,7 @@ export function parseArgs(
     stackPrs: raw.stackPrs ?? [],
     statusOnly: raw.statusOnly,
     pretty: raw.pretty,
+    approverCommand: raw.approverCommand ?? null,
     polling: {
       interval: raw.interval,
       sweepInterval: raw.sweepInterval,
@@ -173,6 +202,8 @@ export function parseArgs(
       allowDraft: raw.allowDraft,
       awaitReview: raw.awaitReview,
       reviewTimeout: raw.reviewTimeout,
+      since: raw.since ?? null,
+      head: raw.head ?? null,
     },
   };
 }
@@ -181,7 +212,6 @@ export interface CliRuntime {
   readonly clock: WatchClock;
   readonly stdout: (value: string) => void;
   readonly stderr: (value: string) => void;
-  readonly gitCommonDir: () => Promise<string>;
 }
 function realRuntime(): CliRuntime {
   return {
@@ -195,7 +225,6 @@ function realRuntime(): CliRuntime {
     },
     stdout: (value) => process.stdout.write(value),
     stderr: (value) => process.stderr.write(value),
-    gitCommonDir,
   };
 }
 function repoSlug(value: string): { owner: string; repo: string } {
@@ -207,11 +236,6 @@ function reviewerLogin(value: string, previous: readonly string[]): string[] {
   if (value.trim() === "")
     throw new InvalidArgumentError("login cannot be empty");
   return [...previous, value.trim()];
-}
-function shipIncrement(value: string, previous: readonly string[]): string[] {
-  if (value !== "review" && !/^ci:\S.*$/.test(value))
-    throw new InvalidArgumentError("must be review or ci:<checkName>");
-  return [...previous, value];
 }
 async function resolveThreadCommand(
   argv: readonly string[],
@@ -278,87 +302,37 @@ async function resolveThreadCommand(
       allowDraft: false,
       awaitReview: [],
       reviewTimeout: 0,
+      since: null,
+      head: null,
     },
   });
   if (result === "resolved") return 0;
   runtime.stdout(renderJson(result));
   return result.exitCode;
 }
-async function shipStateCommand(
-  argv: readonly string[],
-  runtime: CliRuntime
-): Promise<number> {
-  const command = new Command("watch-pr ship-state")
-    .description(
-      "Persist ship-to-green counters in <git-dir>/pstack-ship and print them as JSON."
-    )
-    .configureOutput({ writeOut: runtime.stdout, writeErr: runtime.stderr })
-    .exitOverride()
-    .requiredOption("--pr <number>", "pull request number", prNumber)
-    .option("--repo <owner/name>", "repository", repoSlug)
-    .option(
-      "--inc <counter>",
-      "increment review or ci:<checkName>; repeatable",
-      shipIncrement,
-      []
-    )
-    .option("--reset", "delete the saved state before recreating it", false);
-  try {
-    command.parse(argv, { from: "user" });
-  } catch (error) {
-    if (!(error instanceof CommanderError)) throw error;
-    return error.exitCode === 0 ? 0 : 64;
-  }
-  const opts = command.opts<{
-    readonly pr: T.PrNumber;
-    readonly repo?: { readonly owner: string; readonly repo: string };
-    readonly inc: readonly string[];
-    readonly reset: boolean;
-  }>();
-  try {
-    const context = await resolveContext({
-      reader: runtime.reader,
-      owner: opts.repo?.owner ?? null,
-      repo: opts.repo?.repo ?? null,
-      pr: opts.pr,
-    });
-    const state = updateShipState({
-      gitDir: await runtime.gitCommonDir(),
-      context,
-      increments: opts.inc,
-      reset: opts.reset,
-      now: runtime.clock.observedAt(),
-    });
-    runtime.stdout(`${JSON.stringify(state)}\n`);
-    return 0;
-  } catch (error) {
-    if (error instanceof WatcherQueryError) {
-      const verdict = statusQueryVerdict(
-        verdictFactory(runtime.clock, "single"),
-        1,
-        error.failure
-      );
-      runtime.stdout(renderJson(verdict));
-      return verdict.exitCode;
-    }
-    if (!(error instanceof Error)) throw error;
-    runtime.stderr(`error: ${error.message}\n`);
-    return 1;
-  }
-}
 // Nearest-rank percentile over ascending seconds.
 const percentile = (sorted: readonly number[], p: number): number =>
   sorted[Math.max(0, Math.ceil((p / 100) * sorted.length) - 1)] ?? 0;
-function workflowEta(runs: readonly T.WorkflowRun[]) {
+const COPILOT_WORKFLOWS = [
+  "copilot",
+  "copilot code review",
+  "running copilot code review",
+];
+const PR_EVENTS = ["pull_request", "pull_request_target"];
+function workflowEta(runs: readonly T.WorkflowRun[], approverWorkflow: string | null) {
   const durations: Record<string, number[]> = {};
+  const prWorkflows = new Set<string>();
   for (const run of runs) {
     if (run.status !== "completed" || run.conclusion !== "success") continue;
+    // startedAt is the latest attempt's start, so a rerun hours later does
+    // not count the gap between attempts.
     const seconds = Math.round(
-      (Date.parse(run.updatedAt) - Date.parse(run.createdAt)) / 1_000
+      (Date.parse(run.updatedAt) - Date.parse(run.startedAt)) / 1_000
     );
     (durations[run.workflowName] ??= []).push(seconds);
+    if (PR_EVENTS.includes(run.event)) prWorkflows.add(run.workflowName);
   }
-  return Object.fromEntries(
+  const workflows = Object.fromEntries(
     Object.entries(durations).map(([name, values]) => {
       const sorted = values.sort((a, b) => a - b);
       return [
@@ -367,6 +341,29 @@ function workflowEta(runs: readonly T.WorkflowRun[]) {
       ];
     })
   );
+  const isCopilot = (name: string) => COPILOT_WORKFLOWS.includes(name.toLowerCase());
+  // Twice the slowest p90 among workflows with at least 3 samples.
+  const timeout = (match: (name: string) => boolean, fallback: number) => {
+    const p90s = Object.entries(workflows)
+      .filter(([name, stats]) => stats.n >= 3 && match(name))
+      .map(([, stats]) => stats.p90);
+    return p90s.length === 0 ? fallback : 2 * Math.max(...p90s);
+  };
+  const ciTimeout = timeout(
+    (name) => prWorkflows.has(name) && !isCopilot(name) && name !== approverWorkflow,
+    900
+  );
+  const copilotReviewTimeout = timeout(isCopilot, 600);
+  const approverReviewTimeout = timeout((name) => name === approverWorkflow, 900);
+  return {
+    workflows,
+    recommended: {
+      ciTimeout,
+      copilotReviewTimeout,
+      approverReviewTimeout,
+      runBudget: 3 * (ciTimeout + copilotReviewTimeout) + 2 * approverReviewTimeout,
+    },
+  };
 }
 async function etaCommand(
   argv: readonly string[],
@@ -374,12 +371,13 @@ async function etaCommand(
 ): Promise<number> {
   const command = new Command("watch-pr eta")
     .description(
-      "Print p50/p90 seconds of successful GitHub Actions runs per workflow (CI, Copilot review, approver)."
+      "Print p50/p90 seconds of successful GitHub Actions runs per workflow, timed from the latest attempt's start, and the recommended timeouts:\nciTimeout (2x the slowest pull_request workflow p90, else 900), copilotReviewTimeout (2x Copilot p90, else 600), approverReviewTimeout (2x --approver-workflow p90, else 900), and runBudget = 3 x (ciTimeout + copilotReviewTimeout) + 2 x approverReviewTimeout.\nA workflow needs 3 samples to count."
     )
     .configureOutput({ writeOut: runtime.stdout, writeErr: runtime.stderr })
     .exitOverride()
     .option("--repo <owner/name>", "repository", repoSlug)
-    .option("--limit <count>", "runs to sample", positiveInteger, 200);
+    .option("--limit <count>", "runs to sample", positiveInteger, 200)
+    .option("--approver-workflow <name>", "workflow name of the approving review");
   try {
     command.parse(argv, { from: "user" });
   } catch (error) {
@@ -389,6 +387,7 @@ async function etaCommand(
   const opts = command.opts<{
     readonly repo?: T.Repository;
     readonly limit: number;
+    readonly approverWorkflow?: string;
   }>();
   try {
     const repository = opts.repo ?? (await runtime.reader.originRepo());
@@ -401,7 +400,7 @@ async function etaCommand(
       `${JSON.stringify({
         repo: `${repository.owner}/${repository.repo}`,
         sampled: runs.length,
-        workflows: workflowEta(runs),
+        ...workflowEta(runs, opts.approverWorkflow ?? null),
       })}\n`
     );
     return 0;
@@ -422,7 +421,6 @@ export async function main(
 ): Promise<number> {
   if (argv[0] === "resolve-thread")
     return resolveThreadCommand(argv.slice(1), runtime);
-  if (argv[0] === "ship-state") return shipStateCommand(argv.slice(1), runtime);
   if (argv[0] === "eta") return etaCommand(argv.slice(1), runtime);
   let options: CliOptions;
   try {
@@ -467,6 +465,7 @@ export async function main(
           mode: options.mode,
           statusOnly: options.statusOnly,
           options: options.polling,
+          approverCommand: options.approverCommand,
         });
   runtime.stdout(render(verdict));
   return verdict.exitCode;

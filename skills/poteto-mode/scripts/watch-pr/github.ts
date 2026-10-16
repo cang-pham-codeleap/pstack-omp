@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { resolve as resolvePath } from "node:path";
 import type * as T from "./types.ts";
 import { nonEmpty, parsePrNumber } from "./types.ts";
 export const REVIEW_THREADS_QUERY =
@@ -7,13 +6,15 @@ export const REVIEW_THREADS_QUERY =
 export const PR_COMMIT_STATUS_QUERY =
   "\nquery PrCommitStatuses($owner: String!, $repo: String!, $pr: Int!) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      commits(last: 50) {\n        nodes {\n          commit {\n            oid\n            statusCheckRollup {\n              state\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
 export const PR_REVIEWS_QUERY =
-  "\nquery PrReviews($owner: String!, $repo: String!, $pr: Int!) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      reviews(last: 100) {\n        nodes {\n          state\n          author { login }\n          commit { oid }\n        }\n      }\n    }\n  }\n}\n";
+  "\nquery PrReviews($owner: String!, $repo: String!, $pr: Int!) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      reviews(last: 100) {\n        nodes {\n          state\n          body\n          submittedAt\n          author { login }\n          commit { oid }\n        }\n      }\n    }\n  }\n}\n";
 export const REPLY_TO_THREAD_MUTATION =
   "\nmutation ReplyToThread($threadId: ID!, $body: String!) {\n  addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $threadId, body: $body }) {\n    comment { id }\n  }\n}\n";
 export const RESOLVE_THREAD_MUTATION =
   "\nmutation ResolveThread($threadId: ID!) {\n  resolveReviewThread(input: { threadId: $threadId }) {\n    thread { isResolved }\n  }\n}\n";
 export const PR_CHECK_ROLLUP_QUERY =
-  "\nquery PrCheckRollup($owner: String!, $repo: String!, $pr: Int!, $after: String) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      commits(last: 1) {\n        nodes {\n          commit {\n            statusCheckRollup {\n              contexts(first: 100, after: $after) {\n                pageInfo {\n                  hasNextPage\n                  endCursor\n                }\n                nodes {\n                  __typename\n                  ... on CheckRun {\n                    name\n                    status\n                    conclusion\n                    detailsUrl\n                    checkSuite { workflowRun { workflow { name } } }\n                  }\n                  ... on StatusContext {\n                    context\n                    state\n                    targetUrl\n                  }\n                }\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
+  "\nquery PrCheckRollup($owner: String!, $repo: String!, $pr: Int!, $after: String) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      commits(last: 1) {\n        nodes {\n          commit {\n            statusCheckRollup {\n              contexts(first: 100, after: $after) {\n                pageInfo {\n                  hasNextPage\n                  endCursor\n                }\n                nodes {\n                  __typename\n                  ... on CheckRun {\n                    databaseId\n                    name\n                    status\n                    conclusion\n                    detailsUrl\n                    checkSuite { workflowRun { databaseId event workflow { databaseId name } } }\n                  }\n                  ... on StatusContext {\n                    context\n                    state\n                    targetUrl\n                  }\n                }\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
+export const SHIP_ACTIVITY_QUERY =
+  "\nquery ShipActivity($owner: String!, $repo: String!, $pr: Int!) {\n  viewer { login }\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      createdAt\n      comments(last: 100) {\n        nodes {\n          body\n          author { login }\n        }\n      }\n      commits(last: 100) {\n        nodes {\n          commit {\n            oid\n            statusCheckRollup {\n              contexts(first: 100) {\n                nodes {\n                  __typename\n                  ... on CheckRun { name conclusion }\n                  ... on StatusContext { context state }\n                }\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
 
 interface CommandResult {
   readonly code: number;
@@ -260,12 +261,7 @@ export function parseFastCheck(value: unknown): T.Check {
 // one home. Classifying it as pending on either read path makes the watcher
 // wait on a human, which is the behaviour #172004 removed from the Python.
 function pendingOrGate(
-  details: {
-    readonly name: string;
-    readonly description: string;
-    readonly link: string;
-    readonly workflow: string;
-  },
+  details: Omit<T.PendingCheck, "kind" | "reportedState">,
   reportedState: string
 ): T.Check {
   return details.name === "Code Review Gate"
@@ -286,11 +282,25 @@ export function mapRollupNode(value: unknown): T.Check | null {
     typename === "CheckRun" ? "name" : "context"
   );
   const run = isRecord(object.checkSuite) ? object.checkSuite.workflowRun : null;
+  const flow = isRecord(run) && isRecord(run.workflow) ? run.workflow : null;
   const workflow =
-    isRecord(run) && isRecord(run.workflow) && typeof run.workflow.name === "string"
-      ? run.workflow.name
-      : named.workflow;
-  const details = { ...named, workflow };
+    typeof flow?.name === "string" ? flow.name : named.workflow;
+  const identified =
+    isRecord(run) &&
+    Number.isInteger(run.databaseId) &&
+    Number.isInteger(flow?.databaseId) &&
+    Number.isInteger(object.databaseId);
+  const details = identified
+    ? {
+        ...named,
+        workflow,
+        workflowRun: {
+          identity: `${flow?.databaseId}:${String(run.event)}`,
+          runId: Number(run.databaseId),
+          checkId: Number(object.databaseId),
+        },
+      }
+    : { ...named, workflow };
   const link =
     typeof object.targetUrl === "string" ? object.targetUrl : details.link;
   if (typename === "CheckRun") {
@@ -477,8 +487,63 @@ export function parseReviews(value: unknown): readonly T.PrReview[] {
         commit === null
           ? null
           : string(commit.oid, `reviews[${index}].commit.oid`),
+      submittedAt: optionalString(
+        review.submittedAt,
+        `reviews[${index}].submittedAt`
+      ),
+      body: string(review.body, `reviews[${index}].body`),
     };
   });
+}
+const FAILED_CONCLUSIONS = ["FAILURE", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE", "ERROR"];
+export function parseShipActivity(value: unknown): T.ShipActivity {
+  const pr = record(
+    at(value, ["data", "repository", "pullRequest"]),
+    "pullRequest"
+  );
+  const viewer = string(at(value, ["data", "viewer", "login"]), "viewer.login");
+  const comments = list(at(pr, ["comments", "nodes"]), "comments.nodes").map(
+    (item, index) => {
+      const comment = record(item, `comments[${index}]`);
+      return {
+        authorLogin:
+          comment.author === null
+            ? null
+            : optionalString(
+                record(comment.author, `comments[${index}].author`).login,
+                `comments[${index}].author.login`
+              ),
+        body: string(comment.body, `comments[${index}].body`),
+      };
+    }
+  );
+  const commits = list(at(pr, ["commits", "nodes"]), "commits.nodes").map(
+    (item, index) => {
+      const commit = record(at(item, ["commit"]), `commits[${index}].commit`);
+      const rollup = commit.statusCheckRollup;
+      const contexts =
+        rollup === null
+          ? []
+          : list(at(rollup, ["contexts", "nodes"]), `commits[${index}].contexts`);
+      return {
+        oid: string(commit.oid, `commits[${index}].oid`),
+        failedChecks: contexts.flatMap((node) => {
+          const check = record(node, `commits[${index}].context`);
+          const name = check.name ?? check.context;
+          const result = String(check.conclusion ?? check.state ?? "").toUpperCase();
+          return typeof name === "string" && FAILED_CONCLUSIONS.includes(result)
+            ? [name]
+            : [];
+        }),
+      };
+    }
+  );
+  return {
+    createdAt: string(pr.createdAt, "pullRequest.createdAt"),
+    viewerLogin: viewer,
+    comments,
+    commits,
+  };
 }
 function mutationArgs(
   query: string,
@@ -668,6 +733,11 @@ export class GhGitHubReader implements T.GitHubReader {
   async reviews(context: T.PrContext): Promise<readonly T.PrReview[]> {
     return parseReviews(await runJson(graphqlArgs(PR_REVIEWS_QUERY, context)));
   }
+  async shipActivity(context: T.PrContext): Promise<T.ShipActivity> {
+    return parseShipActivity(
+      await runJson(graphqlArgs(SHIP_ACTIVITY_QUERY, context))
+    );
+  }
   async replyToThread(threadId: string, body: string): Promise<void> {
     await runJson(mutationArgs(REPLY_TO_THREAD_MUTATION, threadId, body));
   }
@@ -687,57 +757,50 @@ export class GhGitHubReader implements T.GitHubReader {
       "--limit",
       String(limit),
       "--json",
-      "workflowName,status,conclusion,createdAt,updatedAt",
+      "workflowName,event,status,conclusion,startedAt,updatedAt",
     ]);
     return list(value, "runs").map((item, index) => {
       const object = record(item, `runs[${index}]`);
       const field = (key: string) => string(object[key], `runs[${index}].${key}`);
       return {
         workflowName: field("workflowName"),
+        event: field("event"),
         status: field("status"),
         conclusion: field("conclusion"),
-        createdAt: field("createdAt"),
+        startedAt: field("startedAt"),
         updatedAt: field("updatedAt"),
       };
     });
   }
 }
-export async function gitCommonDir(): Promise<string> {
-  const result = await run(["git", "rev-parse", "--git-common-dir"]);
-  if (result.code !== 0 || !result.stdout.trim())
-    throw new Error(
-      `git rev-parse --git-common-dir failed: ${firstLine(result.stderr)}`
-    );
-  return resolvePath(result.stdout.trim());
-}
-const RUN_ID = /\/actions\/runs\/(\d+)/;
 // Re-triggering a workflow cancels its older run, yet GitHub keeps reporting
-// the old run's failed/cancelled checks for the same head beside the new run's.
-// Keep only each workflow's newest run; checks without a run id (status
-// contexts, external apps) are not Actions runs and pass through.
+// the old run's checks for the same head beside the new run's. Keep the newest
+// run per workflow id and event, and the newest attempt of each check in it.
+// Display names are not identities: two workflow files may share a `name:`.
+// Checks without an identity (status contexts, `gh pr checks`, which already
+// dedups) pass through.
 function latestRuns(checks: readonly T.Check[]): T.Check[] {
-  const runId = (check: T.Check): number | null => {
-    const match = check.workflow ? RUN_ID.exec(check.link) : null;
-    return match ? Number(match[1]) : null;
-  };
-  const newest = new Map<string, number>();
-  for (const check of checks) {
-    const id = runId(check);
-    if (id !== null)
-      newest.set(check.workflow, Math.max(id, newest.get(check.workflow) ?? 0));
-  }
-  return checks.filter((check) => {
-    const id = runId(check);
-    return id === null || id === newest.get(check.workflow);
-  });
+  const newestRun = new Map<string, number>();
+  const newestCheck = new Map<string, number>();
+  for (const { workflowRun: run } of checks)
+    if (run !== undefined)
+      newestRun.set(run.identity, Math.max(run.runId, newestRun.get(run.identity) ?? 0));
+  for (const { name, workflowRun: run } of checks)
+    if (run !== undefined && run.runId === newestRun.get(run.identity)) {
+      const key = `${run.identity}\0${name}`;
+      newestCheck.set(key, Math.max(run.checkId, newestCheck.get(key) ?? 0));
+    }
+  return checks.filter(
+    ({ name, workflowRun: run }) =>
+      run === undefined || run.checkId === newestCheck.get(`${run.identity}\0${name}`)
+  );
 }
 export async function resolveChecks(
   reader: T.GitHubReader,
   context: T.PrContext
 ): Promise<T.CheckRead> {
   const fast = await reader.checksFastPath(context);
-  const direct =
-    fast.kind === "checks" ? nonEmpty(latestRuns(fast.checks)) : null;
+  const direct = fast.kind === "checks" ? nonEmpty(fast.checks) : null;
   if (direct !== null) return { source: "gh-pr-checks", checks: direct };
   const checks: T.Check[] = [];
   let after: string | null = null;

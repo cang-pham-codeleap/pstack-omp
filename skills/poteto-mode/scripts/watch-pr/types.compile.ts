@@ -40,10 +40,12 @@ const cleanCi = {
 const readyPr = {
   kind: "ready-pr",
   context,
+  headSha: "head",
   proof: {
     mergeability: "clear",
     threads: [],
     ci: cleanCi,
+    reviews: [],
     gate: {
       state: "OPEN",
       reviewDecision: "APPROVED",

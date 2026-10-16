@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type CliRuntime, main, parseArgs } from "./cli.ts";
@@ -25,8 +25,10 @@ const BOT = "copilot-pull-request-reviewer[bot]";
 const review = (
   authorLogin: string,
   commitOid: string | null,
-  state = "COMMENTED"
-): PrReview => ({ authorLogin, state, commitOid });
+  state = "COMMENTED",
+  submittedAt: string | null = "2026-07-26T00:00:00Z",
+  body = ""
+): PrReview => ({ authorLogin, state, commitOid, submittedAt, body });
 const polling = (overrides: Partial<PollingOptions> = {}): PollingOptions => ({
   interval: 10,
   sweepInterval: 300,
@@ -35,6 +37,8 @@ const polling = (overrides: Partial<PollingOptions> = {}): PollingOptions => ({
   allowDraft: false,
   awaitReview: [BOT],
   reviewTimeout: 600,
+  since: null,
+  head: null,
   ...overrides,
 });
 
@@ -65,6 +69,7 @@ async function watch(
     mode: "single",
     statusOnly: false,
     options,
+    approverCommand: null,
   });
   return { events, verdict };
 }
@@ -300,6 +305,104 @@ describe("await review bots", () => {
       )
     ).toBe(64);
   });
+
+  it("holds an approver until it APPROVES the head after --since, and reports the review", async () => {
+    const since = "2026-07-26T01:00:00Z";
+    const options = polling({ awaitReview: ["review-bot[bot]"], since, reviewTimeout: 20 });
+    const before = review("review-bot[bot]", "head", "APPROVED", "2026-07-26T00:59:00Z");
+    const deferred = review("review-bot[bot]", "head", "COMMENTED", "2026-07-26T01:05:00Z", "VERDICT: DEFERRED");
+    const approved = review("review-bot[bot]", "head", "APPROVED", "2026-07-26T01:06:00Z", "LGTM");
+
+    const stale = await watch(fakeReader({ reviews: [before] }), steppedClock().clock, options);
+    expect(stale.verdict).toMatchObject({ kind: "REVIEW_TIMEOUT", missing: [{ review: null }] });
+
+    const commented = await watch(fakeReader({ reviews: [before, deferred] }), steppedClock().clock, options);
+    expect(commented.events[0]).toMatchObject({
+      kind: "AWAITING_REVIEW",
+      missing: [{ review: { state: "COMMENTED", body: "VERDICT: DEFERRED" } }],
+    });
+    expect(commented.verdict).toMatchObject({ kind: "REVIEW_TIMEOUT", exitCode: 9 });
+
+    const ready = await watch(fakeReader({ reviews: [deferred, approved] }), steppedClock().clock, options);
+    expect(ready.verdict).toMatchObject({
+      kind: "READY",
+      scope: {
+        pr: {
+          headSha: "head",
+          proof: { reviews: [{ satisfied: true, review: { state: "APPROVED", submittedAt: "2026-07-26T01:06:00Z" } }] },
+        },
+      },
+    });
+  });
+
+  it("ends with exit 8 when the head is not the pinned SHA", async () => {
+    const { verdict } = await watch(
+      fakeReader(),
+      steppedClock().clock,
+      polling({ awaitReview: [], head: "abcdef1" })
+    );
+    expect(verdict).toMatchObject({
+      kind: "BLOCKER",
+      exitCode: 8,
+      blocker: { kind: "head-changed", expected: "abcdef1", headSha: "head" },
+    });
+  });
+
+  it("retries instead of mixing reads when the head moves mid-snapshot", async () => {
+    const heads = ["abcdef1", "abcdef2", "abcdef2", "abcdef2"];
+    const base = fakeReader();
+    const reader: GitHubReader = {
+      ...base,
+      async pullRequest(requested) {
+        return { ...(await base.pullRequest(requested)), headRefOid: heads.shift() ?? "abcdef2" };
+      },
+    };
+    const { events, verdict } = await watch(
+      reader,
+      steppedClock().clock,
+      polling({ awaitReview: [], head: "abcdef1" })
+    );
+    expect(events[0]).toMatchObject({ kind: "RETRY", failure: { kind: "head-moved" } });
+    expect(verdict).toMatchObject({ kind: "BLOCKER", exitCode: 8, blocker: { headSha: "abcdef2" } });
+  });
+
+  it("derives ship counts from GitHub in --status-only", async () => {
+    const harness = testHarness(
+      fakeReader({
+        reviews: [review(BOT, "a"), review("Copilot", "b"), review("someone", "b")],
+        shipActivity: {
+          createdAt: "2026-07-25T10:00:00Z",
+          viewerLogin: "agent",
+          comments: [
+            { authorLogin: "agent", body: "/review" },
+            { authorLogin: "agent", body: " /review\nplease" },
+            { authorLogin: "agent", body: "/reviewer x" },
+            { authorLogin: "human", body: "/review" },
+          ],
+          commits: [
+            { oid: "a", failedChecks: ["lint"] },
+            { oid: "b", failedChecks: ["lint", "unit", "lint"] },
+            { oid: "head", failedChecks: ["lint"] },
+          ],
+        },
+      })
+    );
+    expect(
+      await main(
+        ["--owner", "owner", "--repo", "repo", "--pr", "1", "--status-only", "--approver-command", "/review"],
+        harness.runtime
+      )
+    ).toBe(0);
+    expect(JSON.parse(harness.stdout[0]).ship).toEqual([
+      {
+        pr: context,
+        startedAt: "2026-07-25T10:00:00Z",
+        copilotReviews: 2,
+        approverRuns: 2,
+        ciFixes: { lint: 2, unit: 1 },
+      },
+    ]);
+  });
 });
 
 describe("review thread triage fields", () => {
@@ -410,35 +513,25 @@ interface TestHarness {
   readonly runtime: CliRuntime;
   readonly stdout: string[];
   readonly stderr: string[];
-  setObservedAt(value: string): void;
 }
 
-function testHarness(reader: GitHubReader, gitDir = ""): TestHarness {
+function testHarness(reader: GitHubReader): TestHarness {
   const stdout: string[] = [];
   const stderr: string[] = [];
-  let observedAt = "2026-07-26T00:00:00.000Z";
   let now = 0;
   const runtime: CliRuntime = {
     reader,
     clock: {
       now: () => now,
-      observedAt: () => observedAt,
+      observedAt: () => "2026-07-26T00:00:00.000Z",
       async sleep(seconds) {
         now += seconds;
       },
     },
     stdout: (value) => stdout.push(value),
     stderr: (value) => stderr.push(value),
-    gitCommonDir: async () => gitDir,
   };
-  return {
-    runtime,
-    stdout,
-    stderr,
-    setObservedAt: (value: string) => {
-      observedAt = value;
-    },
-  };
+  return { runtime, stdout, stderr };
 }
 
 describe("resolve-thread", () => {
@@ -546,90 +639,5 @@ describe("resolve-thread", () => {
       expect(await main(argv, testHarness(reader).runtime)).toBe(64);
       expect(reader.calls).toEqual([]);
     }
-  });
-});
-
-describe("ship-state", () => {
-  const base = ["ship-state", "--pr", "5", "--repo", "o/r"];
-  const run = async (
-    harness: TestHarness,
-    ...extra: string[]
-  ) => {
-    harness.stdout.length = 0;
-    const code = await main([...base, ...extra], harness.runtime);
-    return { code, state: JSON.parse(harness.stdout[0] ?? "null") };
-  };
-
-  it("creates, increments, persists across invocations and resets", async () => {
-    const gitDir = tempDir();
-    const harness = testHarness(fakeReader(), gitDir);
-    const file = join(gitDir, "pstack-ship", "o-r-5.json");
-
-    expect(await run(harness)).toEqual({
-      code: 0,
-      state: {
-        startedAt: "2026-07-26T00:00:00.000Z",
-        reviewRounds: 0,
-        ciFixes: {},
-      },
-    });
-    expect(existsSync(file)).toBe(true);
-
-    harness.setObservedAt("2026-07-26T01:00:00.000Z");
-    expect(
-      await run(harness, "--inc", "review", "--inc", "ci:lint", "--inc", "ci:lint", "--inc", "ci:unit tests")
-    ).toEqual({
-      code: 0,
-      state: {
-        startedAt: "2026-07-26T00:00:00.000Z",
-        reviewRounds: 1,
-        ciFixes: { lint: 2, "unit tests": 1 },
-      },
-    });
-    expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({
-      reviewRounds: 1,
-      ciFixes: { lint: 2, "unit tests": 1 },
-    });
-
-    expect((await run(harness, "--inc", "review")).state).toEqual({
-      startedAt: "2026-07-26T00:00:00.000Z",
-      reviewRounds: 2,
-      ciFixes: { lint: 2, "unit tests": 1 },
-    });
-
-    expect(await run(harness, "--reset")).toEqual({
-      code: 0,
-      state: {
-        startedAt: "2026-07-26T01:00:00.000Z",
-        reviewRounds: 0,
-        ciFixes: {},
-      },
-    });
-  });
-
-  it("keeps state per PR and repo", async () => {
-    const gitDir = tempDir();
-    const harness = testHarness(fakeReader(), gitDir);
-    await run(harness, "--inc", "review");
-    harness.stdout.length = 0;
-    await main(
-      ["ship-state", "--pr", "6", "--repo", "o/r", "--inc", "ci:x"],
-      harness.runtime
-    );
-    expect(JSON.parse(harness.stdout[0])).toMatchObject({
-      reviewRounds: 0,
-      ciFixes: { x: 1 },
-    });
-    expect(existsSync(join(gitDir, "pstack-ship", "o-r-6.json"))).toBe(true);
-  });
-
-  it("rejects malformed increments as usage", async () => {
-    const harness = testHarness(fakeReader(), tempDir());
-    for (const bad of ["nope", "ci:", "review2"]) {
-      expect(
-        await main([...base, "--inc", bad], harness.runtime)
-      ).toBe(64);
-    }
-    expect(harness.stdout).toEqual([]);
   });
 });

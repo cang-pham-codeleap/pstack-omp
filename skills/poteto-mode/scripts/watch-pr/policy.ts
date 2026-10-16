@@ -62,6 +62,7 @@ export async function readSnapshot(args: {
   readonly pendingHistory: "include" | "omit";
   readonly allowDraft: boolean;
   readonly awaitReview?: readonly string[];
+  readonly since?: string | null;
 }): Promise<T.PrSnapshot> {
   const facts = await args.reader.pullRequest(args.context);
   if (facts.state === "MERGED" || facts.mergedAt !== null)
@@ -71,19 +72,36 @@ export async function readSnapshot(args: {
   const threads = await args.reader.reviewThreads(args.context);
   const awaited = args.awaitReview ?? [];
   const reviews = awaited.length === 0 ? [] : await args.reader.reviews(args.context);
-  const awaitedReviews = awaited.map((login) => {
+  const since = args.since == null ? null : Date.parse(args.since);
+  const awaitedReviews = awaited.map((login): T.AwaitedReview => {
     const key = canonicalReviewer(login);
-    const reviewedOid =
-      reviews.findLast(
-        (review) =>
-          review.authorLogin !== null &&
-          review.state !== "DISMISSED" &&
-          canonicalReviewer(review.authorLogin) === key
-      )?.commitOid ?? null;
+    const latest = reviews.findLast(
+      (review) =>
+        review.authorLogin !== null &&
+        review.state !== "DISMISSED" &&
+        canonicalReviewer(review.authorLogin) === key &&
+        (since === null ||
+          (review.submittedAt !== null && Date.parse(review.submittedAt) > since))
+    );
+    const reviewedOid = latest?.commitOid ?? null;
+    // Copilot only ever comments. An approver's COMMENTED review (a deferral)
+    // is not a verdict, so only APPROVED or CHANGES_REQUESTED settles it.
+    const decided =
+      key === "copilot" ||
+      latest?.state === "APPROVED" ||
+      latest?.state === "CHANGES_REQUESTED";
     return {
       login,
       reviewedOid,
-      satisfied: reviewedOid !== null && reviewedOid === facts.headRefOid,
+      satisfied: decided && reviewedOid !== null && reviewedOid === facts.headRefOid,
+      review:
+        latest === undefined
+          ? null
+          : {
+              state: latest.state,
+              submittedAt: latest.submittedAt,
+              body: latest.body.slice(0, 400),
+            },
     };
   });
   const checks = await resolveChecks(args.reader, args.context);
@@ -141,6 +159,15 @@ export async function readSnapshot(args: {
         github: merge.github,
       };
   }
+  // Every read above must describe one head, or checks and reviews of
+  // different commits get mixed into one verdict.
+  const settled = await args.reader.pullRequest(args.context);
+  if (settled.headRefOid !== facts.headRefOid)
+    throw new WatcherQueryError({
+      kind: "head-moved",
+      retryable: true,
+      detail: `head moved from ${facts.headRefOid} to ${settled.headRefOid} during the read`,
+    });
   return {
     kind: "open",
     context: args.context,
@@ -157,24 +184,69 @@ export async function readSnapshot(args: {
     ),
   };
 }
+export function shipCounts(
+  pr: T.PrContext,
+  activity: T.ShipActivity,
+  reviews: readonly T.PrReview[],
+  approverCommand: string | null
+): T.ShipCounts {
+  const ciFixes: Record<string, number> = {};
+  for (const commit of activity.commits.slice(0, -1))
+    for (const name of new Set(commit.failedChecks))
+      ciFixes[name] = (ciFixes[name] ?? 0) + 1;
+  const command = approverCommand?.trim().replace(/\s+/g, " ") || null;
+  return {
+    pr,
+    startedAt: activity.createdAt,
+    copilotReviews: reviews.filter(
+      (review) =>
+        review.authorLogin !== null &&
+        canonicalReviewer(review.authorLogin) === "copilot"
+    ).length,
+    approverRuns:
+      command === null
+        ? null
+        : activity.comments.filter(
+            (comment) =>
+              comment.authorLogin === activity.viewerLogin &&
+              `${comment.body.trim().replace(/\s+/g, " ")} `.startsWith(`${command} `)
+          ).length,
+    ciFixes,
+  };
+}
 const conflictBlocker = (row: T.PrSnapshot): T.MergeBlocker | null =>
   row.kind === "open" &&
   (row.facts.mergeable === "CONFLICTING" ||
     row.facts.mergeStateStatus === "DIRTY" ||
     row.facts.mergeStateStatus === "CONFLICTING")
-    ? { kind: "merge-conflicts", pr: row.context, facts: row.facts }
+    ? {
+        kind: "merge-conflicts",
+        pr: row.context,
+        headSha: row.facts.headRefOid,
+        facts: row.facts,
+      }
     : null;
 function threadBlocker(row: T.PrSnapshot): T.MergeBlocker | null {
   if (row.kind !== "open") return null;
   const threads = nonEmpty(row.threads);
   return threads === null
     ? null
-    : { kind: "review-threads", pr: row.context, threads };
+    : {
+        kind: "review-threads",
+        pr: row.context,
+        headSha: row.facts.headRefOid,
+        threads,
+      };
 }
 const ciBlocker = (row: T.PrSnapshot): T.MergeBlocker | null =>
   row.kind === "open" &&
   (row.ci.kind === "ci-failing" || row.ci.kind === "ci-github-rejected")
-    ? { kind: "failing-checks", pr: row.context, ci: row.ci }
+    ? {
+        kind: "failing-checks",
+        pr: row.context,
+        headSha: row.facts.headRefOid,
+        ci: row.ci,
+      }
     : null;
 function gateReason(
   row: T.PrSnapshot,
@@ -197,7 +269,13 @@ function gateBlocker(
       row.kind === "open" &&
       row.ci.kind === "ci-pending")
     ? null
-    : { kind: "merge-gate", pr: row.context, reason };
+    : {
+        kind: "merge-gate",
+        pr: row.context,
+        headSha: row.facts.headRefOid,
+        reason,
+        reviews: row.kind === "open" ? row.awaitedReviews : [],
+      };
 }
 function readyContribution(
   row: T.PrSnapshot,
@@ -222,10 +300,12 @@ function readyContribution(
   return {
     kind: "ready-pr",
     context: row.context,
+    headSha: row.facts.headRefOid,
     proof: {
       mergeability: "clear",
       threads: [],
       ci: row.ci,
+      reviews: row.awaitedReviews,
       gate: {
         state: "OPEN",
         reviewDecision,
@@ -340,6 +420,8 @@ function blockerVerdict(
       return stamp({ kind: "BLOCKER", terminal: true, exitCode: 4, blocker });
     case "merge-gate":
       return stamp({ kind: "BLOCKER", terminal: true, exitCode: 6, blocker });
+    case "head-changed":
+      return stamp({ kind: "BLOCKER", terminal: true, exitCode: 8, blocker });
     default: {
       const exhaustive: never = blocker;
       return exhaustive;
@@ -439,6 +521,7 @@ export async function runSimple(args: {
   readonly mode: T.WatchMode;
   readonly statusOnly: boolean;
   readonly options: T.PollingOptions;
+  readonly approverCommand: string | null;
 }): Promise<T.TerminalVerdict> {
   const stamp = verdictFactory(args.dependencies.clock, args.mode);
   let awaiting: { readonly key: string; readonly since: number } | null = null;
@@ -452,11 +535,35 @@ export async function runSimple(args: {
           pendingHistory: "include",
           allowDraft: args.options.allowDraft,
           awaitReview: args.options.awaitReview,
+          since: args.options.since,
         })
       );
     const complete = nonEmpty(rows);
     if (complete === null) throw new Error("watch context cannot be empty");
-    if (args.statusOnly)
+    const pinned = args.options.head?.toLowerCase();
+    for (const row of complete)
+      if (pinned !== undefined && !row.facts.headRefOid?.toLowerCase().startsWith(pinned))
+        return {
+          kind: "terminal",
+          verdict: blockerVerdict(stamp, {
+            kind: "head-changed",
+            pr: row.context,
+            expected: pinned,
+            headSha: row.facts.headRefOid,
+          }),
+        };
+    if (args.statusOnly) {
+      const { reader } = args.dependencies;
+      const ship: T.ShipCounts[] = [];
+      for (const row of complete)
+        ship.push(
+          shipCounts(
+            row.context,
+            await reader.shipActivity(row.context),
+            await reader.reviews(row.context),
+            args.approverCommand
+          )
+        );
       return {
         kind: "terminal",
         verdict: stamp({
@@ -465,8 +572,10 @@ export async function runSimple(args: {
           exitCode: 0,
           reason: "status-only",
           rows: complete,
+          ship,
         }),
       };
+    }
     if (args.mode === "queued-stack")
       throw new Error("queued-stack requires status-only in the simple runner");
     if (args.mode === "stack")
@@ -498,6 +607,7 @@ export async function runSimple(args: {
                       login: review.login,
                       headSha: row.facts.headRefOid,
                       reviewedSha: review.reviewedOid,
+                      review: review.review,
                     }))
                 : []
             )

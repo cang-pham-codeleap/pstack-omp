@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { type CliRuntime, main, parseArgs } from "./cli.ts";
-import { failedCheck, fakeReader, passingCheck } from "./fakes.test-helper.ts";
+import { fakeReader, passingCheck } from "./fakes.test-helper.ts";
 import { renderJson, renderPretty } from "./render.ts";
 import type { GitHubReader, WatcherVerdict } from "./types.ts";
 import { parsePrNumber } from "./types.ts";
@@ -28,9 +28,6 @@ function testRuntime(reader: GitHubReader): {
       },
       stdout: (value) => stdout.push(value),
       stderr: (value) => stderr.push(value),
-      gitCommonDir: async () => {
-        throw new Error("test unexpectedly asked for the git dir");
-      },
     },
   };
 }
@@ -84,6 +81,8 @@ describe("parseArgs", () => {
       allowDraft: true,
       awaitReview: [],
       reviewTimeout: 600,
+      since: null,
+      head: null,
     });
     expect(parsed.pretty).toBe(true);
   });
@@ -141,6 +140,7 @@ describe("rendering", () => {
         },
       },
     ],
+    ship: [],
   } satisfies WatcherVerdict;
 
   it("emits compact valid JSON by default", () => {
@@ -219,70 +219,57 @@ describe("main", () => {
     });
   });
 
-  it("does not report failing checks from a superseded workflow run", async () => {
-    const run = (id: number) => ({
-      workflow: "Check Pull Request",
-      link: `https://github.com/owner/repo/actions/runs/${id}/job/1`,
-    });
-    const reader = fakeReader({
-      fastPath: {
-        kind: "checks",
-        checks: [
-          { ...failedCheck("status-check"), ...run(38874333343) },
-          {
-            ...failedCheck("Detect Changes"),
-            reportedState: "CANCELLED",
-            ...run(38874333343),
-          },
-          { ...passingCheck("status-check"), ...run(38874340581) },
-          { ...passingCheck("Detect Changes"), ...run(38874340581) },
-        ],
-      },
-    });
-    const harness = testRuntime(reader);
-    const code = await main(
-      ["--owner", "owner", "--repo", "repo", "--pr", "1"],
-      harness.runtime
-    );
-    expect(code).toBe(0);
-    expect(JSON.parse(harness.stdout[0])).toMatchObject({ exitCode: 0 });
-  });
-
-  it("eta prints nearest-rank p50/p90 of successful completed runs", async () => {
+  it("eta times runs from the latest attempt and recommends timeouts", async () => {
     const run = (
       workflowName: string,
       seconds: number,
+      event = "pull_request",
       status = "completed",
       conclusion = "success"
     ) => ({
       workflowName,
+      event,
       status,
       conclusion,
-      createdAt: "2026-10-01T00:00:00Z",
-      updatedAt: new Date(Date.parse("2026-10-01T00:00:00Z") + seconds * 1_000).toISOString(),
+      startedAt: "2026-10-01T05:00:00Z",
+      updatedAt: new Date(Date.parse("2026-10-01T05:00:00Z") + seconds * 1_000).toISOString(),
     });
+    const copilot = (seconds: number) =>
+      run("Running Copilot Code Review", seconds, "dynamic");
     const reader = fakeReader({
       workflowRuns: [
         run("CI", 300),
         run("CI", 100),
         run("CI", 200),
         run("CI", 400),
-        run("CI", 9_999, "completed", "failure"),
-        run("CI", 9_999, "in_progress", ""),
-        run("Running Copilot Code Review", 90),
+        run("CI", 9_999, "pull_request", "completed", "failure"),
+        run("CI", 9_999, "pull_request", "in_progress", ""),
+        run("Deploy", 9_999, "push"),
+        run("Deploy", 9_999, "push"),
+        run("Deploy", 9_999, "push"),
+        copilot(90),
+        copilot(60),
+        copilot(120),
       ],
     });
     const harness = testRuntime(reader);
     expect(
-      await main(["eta", "--repo", "o/r", "--limit", "7"], harness.runtime)
+      await main(["eta", "--repo", "o/r", "--limit", "12"], harness.runtime)
     ).toBe(0);
-    expect(reader.calls).toEqual(["workflowRuns:o/r:7"]);
+    expect(reader.calls).toEqual(["workflowRuns:o/r:12"]);
     expect(JSON.parse(harness.stdout[0])).toEqual({
       repo: "o/r",
-      sampled: 7,
+      sampled: 12,
       workflows: {
         CI: { n: 4, p50: 200, p90: 400 },
-        "Running Copilot Code Review": { n: 1, p50: 90, p90: 90 },
+        Deploy: { n: 3, p50: 9_999, p90: 9_999 },
+        "Running Copilot Code Review": { n: 3, p50: 90, p90: 120 },
+      },
+      recommended: {
+        ciTimeout: 800,
+        copilotReviewTimeout: 240,
+        approverReviewTimeout: 900,
+        runBudget: 3 * (800 + 240) + 2 * 900,
       },
     });
   });

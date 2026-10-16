@@ -77,42 +77,24 @@ describe("checks fallback chain", () => {
     expect(reader.calls).toEqual(["checksFastPath", "checkRollupPage:null"]);
   });
 
-  const inRun = <C extends { link: string; workflow: string }>(
-    check: C,
-    runId: number
-  ): C => ({
-    ...check,
-    workflow: "Check Pull Request",
-    link: `https://github.com/owner/repo/actions/runs/${runId}/job/1`,
-  });
-
-  it("drops checks from a superseded run of the same workflow", async () => {
-    const reader = fakeReader({
-      fastPath: {
-        kind: "checks",
-        checks: [
-          inRun(failedCheck("status-check"), 38874333343),
-          inRun({ ...failedCheck("Detect Changes"), reportedState: "CANCELLED" }, 38874333343),
-          inRun(pendingCheck("status-check"), 38874340581),
-          inRun(pendingCheck("Detect Changes"), 38874340581),
-        ],
-      },
-    });
-    const read = await resolveChecks(reader, context);
-    expect(read.checks.map((check) => `${check.name}:${check.kind}`)).toEqual([
-      "status-check:pending",
-      "Detect Changes:pending",
-    ]);
-  });
-
-  it("keeps a failure in the newest run and checks without a run id", async () => {
+  it("groups superseded runs by workflow id and event, not display name", async () => {
+    const inRun = <C extends object>(
+      check: C,
+      identity: string,
+      runId: number,
+      checkId: number
+    ): C => ({ ...check, workflowRun: { identity, runId, checkId } });
     const reader = fakeReader({
       fastPath: { kind: "unusable", exitCode: 8, stderr: "" },
       rollupPages: [
         {
           checks: [
-            inRun(passingCheck("status-check"), 100),
-            inRun(failedCheck("status-check"), 200),
+            inRun(failedCheck("status-check"), "7:pull_request", 100, 1),
+            inRun(failedCheck("only-old"), "7:pull_request", 100, 2),
+            inRun(failedCheck("status-check"), "7:pull_request", 200, 3),
+            inRun(passingCheck("status-check"), "7:pull_request", 200, 4),
+            inRun(failedCheck("same-name-other-file"), "8:pull_request", 50, 5),
+            inRun(failedCheck("push-run"), "7:push", 90, 6),
             failedCheck("external"),
           ],
           endCursor: null,
@@ -121,7 +103,9 @@ describe("checks fallback chain", () => {
     });
     const read = await resolveChecks(reader, context);
     expect(read.checks.map((check) => `${check.name}:${check.kind}`)).toEqual([
-      "status-check:failed",
+      "status-check:passed",
+      "same-name-other-file:failed",
+      "push-run:failed",
       "external:failed",
     ]);
   });
@@ -150,17 +134,28 @@ describe("rollup node mapping", () => {
     }
   });
 
-  it("reads the workflow name from the CheckRun's workflow run", () => {
+  it("reads the workflow identity from the CheckRun's workflow run", () => {
     expect(
       mapRollupNode({
         __typename: "CheckRun",
+        databaseId: 6,
         name: "ci",
         status: "COMPLETED",
         conclusion: "CANCELLED",
         detailsUrl: "https://github.com/o/r/actions/runs/5/job/6",
-        checkSuite: { workflowRun: { workflow: { name: "Check Pull Request" } } },
+        checkSuite: {
+          workflowRun: {
+            databaseId: 5,
+            event: "pull_request",
+            workflow: { databaseId: 7, name: "Check Pull Request" },
+          },
+        },
       })
-    ).toMatchObject({ kind: "failed", workflow: "Check Pull Request" });
+    ).toMatchObject({
+      kind: "failed",
+      workflow: "Check Pull Request",
+      workflowRun: { identity: "7:pull_request", runId: 5, checkId: 6 },
+    });
   });
 
   it("classifies an in-progress Code Review Gate from the rollup as the gate", () => {

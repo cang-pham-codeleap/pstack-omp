@@ -57,7 +57,7 @@ Type: rebuild
 * Ticket, then Figma, then legacy.
 
 ### Decisions
-* D1: Deprecate \`html\` instead of removing it (source: user, 2026-10-16)
+* D1: Remove or deprecate \`html\`? -> Deprecate it (source: user, 2026-10-16)
 
 ### Delivery
 * Branch feat/cp-6011-html-editor, base main, minor changeset.
