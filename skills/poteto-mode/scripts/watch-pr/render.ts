@@ -22,13 +22,18 @@ function ciCell(row: T.PrSnapshot): string {
 function reviewCell(row: T.PrSnapshot): string {
   if (row.kind !== "open") return "\u2014";
   const open = row.threads.length;
-  return row.reviewAutomationRunning
+  const base = row.reviewAutomationRunning
     ? open
       ? `🤖 running, ${open} open`
       : "🤖 running"
     : open
       ? `📝 ${open} open`
       : "✅";
+  const awaiting = row.awaitedReviews
+    .filter((review) => !review.satisfied)
+    .map((review) => review.login);
+  if (awaiting.length === 0) return base;
+  return `${base === "✅" ? "" : `${base}, `}⌛ awaiting ${awaiting.join(", ")}`;
 }
 function mergeCell(row: T.PrSnapshot): string {
   if (row.kind === "merged") return "✅ merged";
@@ -52,6 +57,13 @@ export function renderStatusTable(rows: T.NonEmpty<T.PrSnapshot>): string {
   }
   return `${lines.join("\n")}\n`;
 }
+const missingLines = (missing: T.NonEmpty<T.MissingReview>): string =>
+  missing
+    .map(
+      (item) =>
+        `awaiting=${item.login} pr=${item.pr.number} head=${item.headSha ?? "None"} reviewed=${item.reviewedSha ?? "None"}`
+    )
+    .join("\n");
 function threadLine(thread: T.ReviewThread): string {
   const comment = thread.firstComment;
   return [
@@ -60,6 +72,8 @@ function threadLine(thread: T.ReviewThread): string {
     comment?.line ?? "None",
     comment?.authorLogin ?? "None",
     `isBugBot=${thread.isBugbot}`,
+    `isOutdated=${thread.isOutdated}`,
+    `commentId=${comment?.databaseId ?? "None"}`,
     `bugbotReviewPasses=${thread.bugbotReviewPasses}`,
     (comment?.body ?? "").split(/\r?\n/, 1)[0]?.slice(0, 180) ?? "",
   ].join(" ");
@@ -160,7 +174,13 @@ export function renderPretty(verdict: T.WatcherVerdict): string {
         return "TIMEOUT: checks still pending\n";
       if (verdict.reason.kind === "status-unavailable")
         return "TIMEOUT: GitHub status remained unavailable\n";
+      if (verdict.reason.kind === "awaiting-review")
+        return `TIMEOUT: still awaiting review\n${missingLines(verdict.reason.missing)}\n`;
       return `TIMEOUT: queued stack still has ${verdict.reason.unmergedCount} PR${verdict.reason.unmergedCount === 1 ? "" : "s"} unmerged; frontier=#${verdict.reason.frontier.number}\n`;
+    case "AWAITING_REVIEW":
+      return `AWAITING_REVIEW: waiting for review of the head commit\n${missingLines(verdict.missing)}\n`;
+    case "REVIEW_TIMEOUT":
+      return `REVIEW_TIMEOUT: no review of the head commit after ${Math.round(verdict.waitedSeconds)}s\n${missingLines(verdict.missing)}\n`;
     default: {
       const exhaustive: never = verdict;
       return exhaustive;

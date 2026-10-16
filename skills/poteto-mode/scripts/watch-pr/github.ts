@@ -1,12 +1,19 @@
 import { spawn } from "node:child_process";
+import { resolve as resolvePath } from "node:path";
 import type * as T from "./types.ts";
 import { nonEmpty, parsePrNumber } from "./types.ts";
 export const REVIEW_THREADS_QUERY =
-  "\nquery ReviewThreads($owner: String!, $repo: String!, $pr: Int!) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      reviewThreads(first: 100) {\n        nodes {\n          id\n          isResolved\n          comments(first: 10) {\n            nodes {\n              body\n              createdAt\n              path\n              line\n              author { login }\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
+  "\nquery ReviewThreads($owner: String!, $repo: String!, $pr: Int!) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      reviewThreads(first: 100) {\n        nodes {\n          id\n          isResolved\n          isOutdated\n          comments(first: 10) {\n            nodes {\n              databaseId\n              body\n              createdAt\n              path\n              line\n              author { login }\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
 export const PR_COMMIT_STATUS_QUERY =
   "\nquery PrCommitStatuses($owner: String!, $repo: String!, $pr: Int!) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      commits(last: 50) {\n        nodes {\n          commit {\n            oid\n            statusCheckRollup {\n              state\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
+export const PR_REVIEWS_QUERY =
+  "\nquery PrReviews($owner: String!, $repo: String!, $pr: Int!) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      reviews(last: 100) {\n        nodes {\n          state\n          author { login }\n          commit { oid }\n        }\n      }\n    }\n  }\n}\n";
+export const REPLY_TO_THREAD_MUTATION =
+  "\nmutation ReplyToThread($threadId: ID!, $body: String!) {\n  addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $threadId, body: $body }) {\n    comment { id }\n  }\n}\n";
+export const RESOLVE_THREAD_MUTATION =
+  "\nmutation ResolveThread($threadId: ID!) {\n  resolveReviewThread(input: { threadId: $threadId }) {\n    thread { isResolved }\n  }\n}\n";
 export const PR_CHECK_ROLLUP_QUERY =
-  "\nquery PrCheckRollup($owner: String!, $repo: String!, $pr: Int!, $after: String) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      commits(last: 1) {\n        nodes {\n          commit {\n            statusCheckRollup {\n              contexts(first: 100, after: $after) {\n                pageInfo {\n                  hasNextPage\n                  endCursor\n                }\n                nodes {\n                  __typename\n                  ... on CheckRun {\n                    name\n                    status\n                    conclusion\n                    detailsUrl\n                  }\n                  ... on StatusContext {\n                    context\n                    state\n                    targetUrl\n                  }\n                }\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
+  "\nquery PrCheckRollup($owner: String!, $repo: String!, $pr: Int!, $after: String) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      commits(last: 1) {\n        nodes {\n          commit {\n            statusCheckRollup {\n              contexts(first: 100, after: $after) {\n                pageInfo {\n                  hasNextPage\n                  endCursor\n                }\n                nodes {\n                  __typename\n                  ... on CheckRun {\n                    name\n                    status\n                    conclusion\n                    detailsUrl\n                    checkSuite { workflowRun { workflow { name } } }\n                  }\n                  ... on StatusContext {\n                    context\n                    state\n                    targetUrl\n                  }\n                }\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
 
 interface CommandResult {
   readonly code: number;
@@ -274,10 +281,16 @@ export function mapRollupNode(value: unknown): T.Check | null {
   const object = record(value, "rollup node");
   const typename = object.__typename;
   if (typename !== "CheckRun" && typename !== "StatusContext") return null;
-  const details = checkDetails(
+  const named = checkDetails(
     object,
     typename === "CheckRun" ? "name" : "context"
   );
+  const run = isRecord(object.checkSuite) ? object.checkSuite.workflowRun : null;
+  const workflow =
+    isRecord(run) && isRecord(run.workflow) && typeof run.workflow.name === "string"
+      ? run.workflow.name
+      : named.workflow;
+  const details = { ...named, workflow };
   const link =
     typeof object.targetUrl === "string" ? object.targetUrl : details.link;
   if (typename === "CheckRun") {
@@ -315,6 +328,9 @@ function parseComment(value: unknown): T.ReviewComment {
       ? null
       : record(object.author, "review comment.author");
   return {
+    databaseId: Number.isInteger(object.databaseId)
+      ? Number(object.databaseId)
+      : null,
     authorLogin:
       author === null
         ? null
@@ -366,6 +382,7 @@ export function parseReviewThreads(value: unknown): readonly T.ReviewThread[] {
     readonly id: string;
     readonly firstComment: T.ReviewComment | null;
     readonly resolved: boolean;
+    readonly isOutdated: boolean;
   }[] = [];
   for (const node of nodes) {
     const thread = record(node, "review thread");
@@ -379,6 +396,7 @@ export function parseReviewThreads(value: unknown): readonly T.ReviewThread[] {
       id: string(thread.id, "review thread.id"),
       firstComment: comments.length === 0 ? null : parseComment(comments[0]),
       resolved: thread.isResolved,
+      isOutdated: thread.isOutdated === true,
     });
   }
   const keys = new Set<string>();
@@ -392,9 +410,13 @@ export function parseReviewThreads(value: unknown): readonly T.ReviewThread[] {
   const passes = keys.size > 0 ? keys.size : keyless ? 1 : 0;
   return threads
     .filter((thread) => !thread.resolved)
-    .map(({ id, firstComment }) => ({
+    .map(({ id, firstComment, isOutdated }) => ({
       id,
-      firstComment,
+      isOutdated,
+      firstComment:
+        firstComment === null
+          ? null
+          : { ...firstComment, body: firstComment.body.slice(0, 400) },
       isBugbot: isBugbot(firstComment),
       bugbotReviewPasses: passes,
     }));
@@ -430,6 +452,50 @@ export function parsePullRequest(
     mergedAt: optionalString(object.mergedAt, "pull request.mergedAt"),
     isDraft: object.isDraft,
   };
+}
+export function parseReviews(value: unknown): readonly T.PrReview[] {
+  return list(
+    at(value, ["data", "repository", "pullRequest", "reviews", "nodes"]),
+    "reviews.nodes"
+  ).map((item, index) => {
+    const review = record(item, `reviews[${index}]`);
+    const author =
+      review.author === null
+        ? null
+        : record(review.author, `reviews[${index}].author`);
+    const commit =
+      review.commit === null
+        ? null
+        : record(review.commit, `reviews[${index}].commit`);
+    return {
+      authorLogin:
+        author === null
+          ? null
+          : optionalString(author.login, `reviews[${index}].author.login`),
+      state: string(review.state, `reviews[${index}].state`),
+      commitOid:
+        commit === null
+          ? null
+          : string(commit.oid, `reviews[${index}].commit.oid`),
+    };
+  });
+}
+function mutationArgs(
+  query: string,
+  threadId: string,
+  body: string | null
+): [string, ...string[]] {
+  const argv: [string, ...string[]] = [
+    "gh",
+    "api",
+    "graphql",
+    "-f",
+    `query=${query}`,
+    "-f",
+    `threadId=${threadId}`,
+  ];
+  if (body !== null) argv.push("-f", `body=${body}`);
+  return argv;
 }
 function graphqlArgs(
   query: string,
@@ -599,14 +665,79 @@ export class GhGitHubReader implements T.GitHubReader {
       };
     });
   }
+  async reviews(context: T.PrContext): Promise<readonly T.PrReview[]> {
+    return parseReviews(await runJson(graphqlArgs(PR_REVIEWS_QUERY, context)));
+  }
+  async replyToThread(threadId: string, body: string): Promise<void> {
+    await runJson(mutationArgs(REPLY_TO_THREAD_MUTATION, threadId, body));
+  }
+  async resolveThread(threadId: string): Promise<void> {
+    await runJson(mutationArgs(RESOLVE_THREAD_MUTATION, threadId, null));
+  }
+  async workflowRuns(
+    repository: T.Repository,
+    limit: number
+  ): Promise<readonly T.WorkflowRun[]> {
+    const value = await runJson([
+      "gh",
+      "run",
+      "list",
+      "--repo",
+      `${repository.owner}/${repository.repo}`,
+      "--limit",
+      String(limit),
+      "--json",
+      "workflowName,status,conclusion,createdAt,updatedAt",
+    ]);
+    return list(value, "runs").map((item, index) => {
+      const object = record(item, `runs[${index}]`);
+      const field = (key: string) => string(object[key], `runs[${index}].${key}`);
+      return {
+        workflowName: field("workflowName"),
+        status: field("status"),
+        conclusion: field("conclusion"),
+        createdAt: field("createdAt"),
+        updatedAt: field("updatedAt"),
+      };
+    });
+  }
 }
-
+export async function gitCommonDir(): Promise<string> {
+  const result = await run(["git", "rev-parse", "--git-common-dir"]);
+  if (result.code !== 0 || !result.stdout.trim())
+    throw new Error(
+      `git rev-parse --git-common-dir failed: ${firstLine(result.stderr)}`
+    );
+  return resolvePath(result.stdout.trim());
+}
+const RUN_ID = /\/actions\/runs\/(\d+)/;
+// Re-triggering a workflow cancels its older run, yet GitHub keeps reporting
+// the old run's failed/cancelled checks for the same head beside the new run's.
+// Keep only each workflow's newest run; checks without a run id (status
+// contexts, external apps) are not Actions runs and pass through.
+function latestRuns(checks: readonly T.Check[]): T.Check[] {
+  const runId = (check: T.Check): number | null => {
+    const match = check.workflow ? RUN_ID.exec(check.link) : null;
+    return match ? Number(match[1]) : null;
+  };
+  const newest = new Map<string, number>();
+  for (const check of checks) {
+    const id = runId(check);
+    if (id !== null)
+      newest.set(check.workflow, Math.max(id, newest.get(check.workflow) ?? 0));
+  }
+  return checks.filter((check) => {
+    const id = runId(check);
+    return id === null || id === newest.get(check.workflow);
+  });
+}
 export async function resolveChecks(
   reader: T.GitHubReader,
   context: T.PrContext
 ): Promise<T.CheckRead> {
   const fast = await reader.checksFastPath(context);
-  const direct = fast.kind === "checks" ? nonEmpty(fast.checks) : null;
+  const direct =
+    fast.kind === "checks" ? nonEmpty(latestRuns(fast.checks)) : null;
   if (direct !== null) return { source: "gh-pr-checks", checks: direct };
   const checks: T.Check[] = [];
   let after: string | null = null;
@@ -615,7 +746,7 @@ export async function resolveChecks(
     checks.push(...page.checks);
     after = page.endCursor;
   } while (after !== null);
-  const fallback = nonEmpty(checks);
+  const fallback = nonEmpty(latestRuns(checks));
   if (fallback !== null) return { source: "graphql-rollup", checks: fallback };
   const suffix =
     fast.kind === "unusable"

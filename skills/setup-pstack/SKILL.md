@@ -5,7 +5,7 @@ description: Configure which models pstack's role agents use and at what reasoni
 
 # Setup pstack
 
-Write the seven `pstack-*` entries into one config file: a `modelRoles` key holding the concrete selector, and a `task.agentModelOverrides` entry pointing the role agent at it. Those two keys decide which model each pstack worker runs on. Step 3(a) asks whether that file is the project's `.omp/config.yml` or the global `~/.omp/agent/config.yml`; the project file only affects this repo, the global file affects every project on this machine.
+Write the eight `pstack-*` entries into one config file: a `modelRoles` key holding the concrete selector, and a `task.agentModelOverrides` entry pointing the role agent at it. Those two keys decide which model each pstack worker runs on. Step 3(a) asks whether that file is the project's `.omp/config.yml` or the global `~/.omp/agent/config.yml`; the project file only affects this repo, the global file affects every project on this machine.
 
 ## Steps
 
@@ -41,7 +41,7 @@ The role list and their intents are in step 5. Check the project's `.omp/config.
 - `medium — high reasoning`
 - `small — medium reasoning`
 
-**(c) Apply it.** `unlimited` leaves every effort where it already is. `large`, `medium`, and `small` set the effort on every real selector to `xhigh`, `high`, or `medium`, panel entries included. The ladder is `off` < `minimal` < `low` < `medium` < `high` < `xhigh` < `max`. When the target level is not in that model's detected `thinking` array, take the highest detected level at or below the target. Never invent a level, and probe whatever you choose as step 1 describes. On a re-run, keep any role you changed by family.
+**(c) Apply it.** `unlimited` leaves every effort where it already is. `large`, `medium`, and `small` set the effort on every real selector to `xhigh`, `high`, or `medium`, panel entries included. `pstack-watch` is the exception: it always takes the account's cheapest fast model that can run shell (haiku-class) at `medium`, whatever the budget, because it mostly waits on a script. The ladder is `off` < `minimal` < `low` < `medium` < `high` < `xhigh` < `max`. When the target level is not in that model's detected `thinking` array, take the highest detected level at or below the target. Never invent a level, and probe whatever you choose as step 1 describes. On a re-run, keep any role you changed by family.
 
 **(d) Show the roles and confirm.** Show every role with its selector, marking any selector step 1 did not confirm as needing a choice. Ask whether to accept as-is or change specific roles, offering the detected selectors as the options. Prefer `ask` over free text. `pstack-panel-1` through `pstack-panel-4` are four independent roles and one `pstack-panel-<n>` agent runs per configured panel entry, so their values set how many models a review panel actually spans. Give them four different families when the account carries four. Collapsing them to fewer weakens the panel, so say so rather than letting it happen silently.
 
@@ -51,16 +51,16 @@ Every selector written must have passed step 1's probe, suffix included. Write a
 
 ### 5. Write the roles
 
-Read the file step 3(a) chose, the project's `.omp/config.yml` or the global `~/.omp/agent/config.yml`, replace the seven `modelRoles.pstack-*` keys and the seven `task.agentModelOverrides` entries named `pstack-*`, and write the file back. Create the file, and the `.omp/` directory, if the project scope was chosen and neither exists yet.
+Read the file step 3(a) chose, the project's `.omp/config.yml` or the global `~/.omp/agent/config.yml`, replace the eight `modelRoles.pstack-*` keys and the eight `task.agentModelOverrides` entries named `pstack-*`, and write the file back. Create the file, and the `.omp/` directory, if the project scope was chosen and neither exists yet.
 
-Your write set is exactly those fourteen values. Everything else is out of scope, including anything that looks like it ought to be tidy:
+Your write set is exactly those sixteen values. Everything else is out of scope, including anything that looks like it ought to be tidy:
 
 - Other `modelRoles` keys (`advisor`, `task`, `smol`, …) keep their values.
-- Other `agentModelOverrides` entries (`project-advisor`, …) keep theirs. Merge into the existing map, leave every sibling entry alone, and if `task.agentModelOverrides` is absent, create it holding the seven pstack entries and nothing more.
+- Other `agentModelOverrides` entries (`project-advisor`, …) keep theirs. Merge into the existing map, leave every sibling entry alone, and if `task.agentModelOverrides` is absent, create it holding the eight pstack entries and nothing more.
 - Every other top-level block (`providers`, `theme`, `task.eager`, `compaction`, `retry`, …) is untouched, formatting and key order included. Don't reorder, re-indent, or normalize the file.
-- Never copy a selector into an override entry for some *other* agent, and never add a `pstack-*` key beyond the seven.
+- Never copy a selector into an override entry for some *other* agent, and never add a `pstack-*` key beyond the eight.
 
-Re-runs stay idempotent because you rewrite the same fourteen values.
+Re-runs stay idempotent because you rewrite the same sixteen values.
 
 Both blocks are needed. An agent installed from a marketplace does not get its frontmatter `model` applied, so the settings-level override is what actually routes it, and its alias resolves through `modelRoles`. That keeps each concrete selector in exactly one place.
 
@@ -75,6 +75,7 @@ modelRoles:
   pstack-panel-2: <selector>:xhigh
   pstack-panel-3: <selector>:xhigh
   pstack-panel-4: <selector>:xhigh
+  pstack-watch: <cheapest-fast-selector>:medium
 task:
   # every existing task setting and override entry is left untouched
   agentModelOverrides:
@@ -85,6 +86,7 @@ task:
     pstack-panel-2: "@pstack-panel-2"
     pstack-panel-3: "@pstack-panel-3"
     pstack-panel-4: "@pstack-panel-4"
+    pstack-watch: "@pstack-watch"
 ```
 
 Inside `agentModelOverrides` the value is the quoted alias `"@pstack-<role>"`, never the selector. The selector is written once, in `modelRoles`; putting it in the override too makes that copy win, so a later model change silently fails.
@@ -99,6 +101,7 @@ Role intents:
 - `pstack-judgment`: your strongest reasoning model. Serves judgment and prose, the hardest tasks, how-explainers, why-synthesizers, the reflect judgment, divergent, and synthesizer passes, and arena cross-judges.
 - `pstack-tooling`: a strong model from a different family than judgment. Serves the reflect tooling lens, where a second family sees different problems.
 - `pstack-panel-1` … `pstack-panel-4`: review-panel seats. Serve arena runners, architect runners, and interrogate reviewers, one agent per entry.
+- `pstack-watch`: your cheapest fast model that can run shell (haiku-class), at `medium` (or `low`) thinking regardless of budget. Serves the PR watcher: it runs the watch script, reads CI logs, and returns short status reports.
 
 A project's `.omp/config.yml` model roles override the global ones inside that project, so a repo can pin its own pstack models; step 3(a) is what picks which file this skill writes. The `/model` command's Roles view always writes the global keys, by hand.
 

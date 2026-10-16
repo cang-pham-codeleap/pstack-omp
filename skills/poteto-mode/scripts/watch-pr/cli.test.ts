@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { type CliRuntime, main, parseArgs } from "./cli.ts";
-import { fakeReader, passingCheck } from "./fakes.test-helper.ts";
+import { failedCheck, fakeReader, passingCheck } from "./fakes.test-helper.ts";
 import { renderJson, renderPretty } from "./render.ts";
 import type { GitHubReader, WatcherVerdict } from "./types.ts";
 import { parsePrNumber } from "./types.ts";
@@ -28,6 +28,9 @@ function testRuntime(reader: GitHubReader): {
       },
       stdout: (value) => stdout.push(value),
       stderr: (value) => stderr.push(value),
+      gitCommonDir: async () => {
+        throw new Error("test unexpectedly asked for the git dir");
+      },
     },
   };
 }
@@ -79,6 +82,8 @@ describe("parseArgs", () => {
       timeout: 0,
       maxQueryErrors: 3,
       allowDraft: true,
+      awaitReview: [],
+      reviewTimeout: 600,
     });
     expect(parsed.pretty).toBe(true);
   });
@@ -210,6 +215,74 @@ describe("main", () => {
       blocker: {
         kind: "failing-checks",
         ci: { kind: "ci-github-rejected" },
+      },
+    });
+  });
+
+  it("does not report failing checks from a superseded workflow run", async () => {
+    const run = (id: number) => ({
+      workflow: "Check Pull Request",
+      link: `https://github.com/owner/repo/actions/runs/${id}/job/1`,
+    });
+    const reader = fakeReader({
+      fastPath: {
+        kind: "checks",
+        checks: [
+          { ...failedCheck("status-check"), ...run(38874333343) },
+          {
+            ...failedCheck("Detect Changes"),
+            reportedState: "CANCELLED",
+            ...run(38874333343),
+          },
+          { ...passingCheck("status-check"), ...run(38874340581) },
+          { ...passingCheck("Detect Changes"), ...run(38874340581) },
+        ],
+      },
+    });
+    const harness = testRuntime(reader);
+    const code = await main(
+      ["--owner", "owner", "--repo", "repo", "--pr", "1"],
+      harness.runtime
+    );
+    expect(code).toBe(0);
+    expect(JSON.parse(harness.stdout[0])).toMatchObject({ exitCode: 0 });
+  });
+
+  it("eta prints nearest-rank p50/p90 of successful completed runs", async () => {
+    const run = (
+      workflowName: string,
+      seconds: number,
+      status = "completed",
+      conclusion = "success"
+    ) => ({
+      workflowName,
+      status,
+      conclusion,
+      createdAt: "2026-10-01T00:00:00Z",
+      updatedAt: new Date(Date.parse("2026-10-01T00:00:00Z") + seconds * 1_000).toISOString(),
+    });
+    const reader = fakeReader({
+      workflowRuns: [
+        run("CI", 300),
+        run("CI", 100),
+        run("CI", 200),
+        run("CI", 400),
+        run("CI", 9_999, "completed", "failure"),
+        run("CI", 9_999, "in_progress", ""),
+        run("Running Copilot Code Review", 90),
+      ],
+    });
+    const harness = testRuntime(reader);
+    expect(
+      await main(["eta", "--repo", "o/r", "--limit", "7"], harness.runtime)
+    ).toBe(0);
+    expect(reader.calls).toEqual(["workflowRuns:o/r:7"]);
+    expect(JSON.parse(harness.stdout[0])).toEqual({
+      repo: "o/r",
+      sampled: 7,
+      workflows: {
+        CI: { n: 4, p50: 200, p90: 400 },
+        "Running Copilot Code Review": { n: 1, p50: 90, p90: 90 },
       },
     });
   });

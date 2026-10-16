@@ -12,6 +12,7 @@ pstack is installed as a Claude Code plugin. Its skills are written for omp (oh-
 - `read` / `edit` / `write` / `bash` / `grep` / `find` → `Read` / `Edit` / `Write` / `Bash` / `Grep` / `Glob`.
 - `task` → `Agent`. A `task` batch → several `Agent` calls in one message. OMP's 8-at-once cap does not apply.
 - `agent: "pstack-code"` (any `pstack-*` role, `poteto-agent`) → `subagent_type: "pstack:<same name>"`. `agent: "Comment Sicko"` → `subagent_type: "pstack:comment-sicko"`. Pass `{{PSTACK_ROOT}}` in the prompt when the worker must read pstack files.
+- `agent: "scout"` (the **ticket-intake** skill's read-only exploration) → `subagent_type: "Explore"`.
 - `isolated: true` → `isolation: "worktree"`.
 - `agent://<id>` (parked subagent) → `SendMessage` to that agent, or read its transcript.
 - Long-running background `task` + `hub wait` / `hub jobs` heartbeat → `Agent` or `Bash` with `run_in_background: true`; wait for the completion notification, use `Monitor` to watch a condition.

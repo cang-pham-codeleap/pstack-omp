@@ -46,6 +46,10 @@ async function mergeAssessment(
     }),
   };
 }
+export function canonicalReviewer(login: string): string {
+  const base = login.toLowerCase().replace(/\[bot\]$/, "");
+  return base === "copilot-pull-request-reviewer" ? "copilot" : base;
+}
 const AUTOMATION_TOKENS = [
   "bugbot",
   "security review",
@@ -57,6 +61,7 @@ export async function readSnapshot(args: {
   readonly context: T.PrContext;
   readonly pendingHistory: "include" | "omit";
   readonly allowDraft: boolean;
+  readonly awaitReview?: readonly string[];
 }): Promise<T.PrSnapshot> {
   const facts = await args.reader.pullRequest(args.context);
   if (facts.state === "MERGED" || facts.mergedAt !== null)
@@ -64,6 +69,23 @@ export async function readSnapshot(args: {
   if (facts.state === "CLOSED")
     return { kind: "closed", context: args.context, facts };
   const threads = await args.reader.reviewThreads(args.context);
+  const awaited = args.awaitReview ?? [];
+  const reviews = awaited.length === 0 ? [] : await args.reader.reviews(args.context);
+  const awaitedReviews = awaited.map((login) => {
+    const key = canonicalReviewer(login);
+    const reviewedOid =
+      reviews.findLast(
+        (review) =>
+          review.authorLogin !== null &&
+          review.state !== "DISMISSED" &&
+          canonicalReviewer(review.authorLogin) === key
+      )?.commitOid ?? null;
+    return {
+      login,
+      reviewedOid,
+      satisfied: reviewedOid !== null && reviewedOid === facts.headRefOid,
+    };
+  });
   const checks = await resolveChecks(args.reader, args.context);
   const failed = nonEmpty(
     checks.checks.filter(
@@ -125,6 +147,7 @@ export async function readSnapshot(args: {
     facts,
     threads,
     ci,
+    awaitedReviews,
     reviewAutomationRunning: checks.checks.some(
       (check) =>
         check.kind === "pending" &&
@@ -418,6 +441,7 @@ export async function runSimple(args: {
   readonly options: T.PollingOptions;
 }): Promise<T.TerminalVerdict> {
   const stamp = verdictFactory(args.dependencies.clock, args.mode);
+  let awaiting: { readonly key: string; readonly since: number } | null = null;
   const step = async (): Promise<StepResult<T.TerminalVerdict>> => {
     const rows: T.PrSnapshot[] = [];
     for (const context of args.contexts)
@@ -427,6 +451,7 @@ export async function runSimple(args: {
           context,
           pendingHistory: "include",
           allowDraft: args.options.allowDraft,
+          awaitReview: args.options.awaitReview,
         })
       );
     const complete = nonEmpty(rows);
@@ -460,6 +485,67 @@ export async function runSimple(args: {
         kind: "terminal",
         verdict: blockerVerdict(stamp, decision.blocker),
       };
+    const missing =
+      decision.kind === "waiting"
+        ? null
+        : nonEmpty(
+            complete.flatMap((row) =>
+              row.kind === "open"
+                ? row.awaitedReviews
+                    .filter((review) => !review.satisfied)
+                    .map((review) => ({
+                      pr: row.context,
+                      login: review.login,
+                      headSha: row.facts.headRefOid,
+                      reviewedSha: review.reviewedOid,
+                    }))
+                : []
+            )
+          );
+    if (missing === null) awaiting = null;
+    else {
+      const now = args.dependencies.clock.now();
+      const key = complete
+        .map((row) =>
+          row.kind === "open"
+            ? `${row.context.number}@${row.facts.headRefOid}`
+            : ""
+        )
+        .join(",");
+      const since = awaiting?.key === key ? awaiting.since : now;
+      awaiting = { key, since };
+      const waited = now - since;
+      const { reviewTimeout, interval } = args.options;
+      if (reviewTimeout > 0 && waited >= reviewTimeout)
+        return {
+          kind: "terminal",
+          verdict: stamp(
+            {
+              kind: "REVIEW_TIMEOUT",
+              terminal: true,
+              exitCode: 9,
+              missing,
+              waitedSeconds: waited,
+            },
+            args.mode
+          ),
+        };
+      args.dependencies.emit(
+        stamp({ kind: "AWAITING_REVIEW", terminal: false, missing })
+      );
+      return {
+        kind: "sleep",
+        seconds:
+          reviewTimeout > 0 ? Math.min(interval, reviewTimeout - waited) : interval,
+        onDeadline: () =>
+          stamp({
+            kind: "TIMEOUT",
+            terminal: true,
+            exitCode: 5,
+            reason: { kind: "awaiting-review", missing },
+          }),
+      };
+    }
     if (decision.kind === "ready" || decision.kind === "merged")
       return {
         kind: "terminal",
@@ -828,5 +914,27 @@ export async function runQueued(args: {
     options: args.options,
     stamp,
     step,
+  });
+}
+export async function runResolveThread(args: {
+  readonly dependencies: RunDependencies;
+  readonly threadId: string;
+  readonly body: string | null;
+  readonly options: T.PollingOptions;
+}): Promise<"resolved" | T.BlockerVerdict | T.TimeoutVerdict> {
+  const { reader } = args.dependencies;
+  let replied = args.body === null;
+  return pollUntilTerminal<"resolved">({
+    dependencies: args.dependencies,
+    options: args.options,
+    stamp: verdictFactory(args.dependencies.clock, "single"),
+    step: async () => {
+      if (!replied && args.body !== null) {
+        await reader.replyToThread(args.threadId, args.body);
+        replied = true;
+      }
+      await reader.resolveThread(args.threadId);
+      return { kind: "terminal", verdict: "resolved" };
+    },
   });
 }

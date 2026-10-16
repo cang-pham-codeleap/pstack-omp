@@ -56,6 +56,7 @@ export interface OpenPullRequest {
   readonly baseRefName: string;
 }
 export interface ReviewComment {
+  readonly databaseId: number | null;
   readonly authorLogin: string | null;
   readonly body: string;
   readonly path: string | null;
@@ -64,9 +65,26 @@ export interface ReviewComment {
 }
 export interface ReviewThread {
   readonly id: string;
+  readonly isOutdated: boolean;
   readonly firstComment: ReviewComment | null;
   readonly isBugbot: boolean;
   readonly bugbotReviewPasses: number;
+}
+export interface PrReview {
+  readonly authorLogin: string | null;
+  readonly state: string;
+  readonly commitOid: string | null;
+}
+export interface AwaitedReview {
+  readonly login: string;
+  readonly reviewedOid: string | null;
+  readonly satisfied: boolean;
+}
+export interface MissingReview {
+  readonly pr: PrContext;
+  readonly login: string;
+  readonly headSha: string | null;
+  readonly reviewedSha: string | null;
 }
 interface CheckDetails {
   readonly name: string;
@@ -155,6 +173,7 @@ export type PrSnapshot =
       readonly threads: readonly ReviewThread[];
       readonly ci: CiState;
       readonly reviewAutomationRunning: boolean;
+      readonly awaitedReviews: readonly AwaitedReview[];
     };
 export interface ReadyPr {
   readonly kind: "ready-pr";
@@ -296,6 +315,9 @@ export type ProgressVerdict =
       readonly frontier: PrContext;
       readonly remaining: number;
     })
+  | (Progress<"AWAITING_REVIEW"> & {
+      readonly missing: NonEmpty<MissingReview>;
+    })
   | (Progress<"RETRY"> & {
       readonly failure: QueryFailure;
       readonly consecutiveFailures: number;
@@ -338,6 +360,10 @@ export type TimeoutVerdict = Terminal<"TIMEOUT", 5> & {
       }
     | { readonly kind: "status-unavailable"; readonly failure: QueryFailure }
     | {
+        readonly kind: "awaiting-review";
+        readonly missing: NonEmpty<MissingReview>;
+      }
+    | {
         readonly kind: "queued-stack";
         readonly frontier: PrContext;
         readonly unmergedCount: number;
@@ -360,6 +386,10 @@ export type TerminalVerdict =
       readonly queue: NonEmpty<PrContext>;
       readonly merged: NonEmpty<MergedPr>;
     })
+  | (Terminal<"REVIEW_TIMEOUT", 9, "single" | "stack"> & {
+      readonly missing: NonEmpty<MissingReview>;
+      readonly waitedSeconds: number;
+    })
   | BlockerVerdict
   | TimeoutVerdict;
 export type WatcherVerdict = ProgressVerdict | TerminalVerdict;
@@ -379,6 +409,13 @@ export interface RollupPage {
   readonly checks: readonly Check[];
   readonly endCursor: string | null;
 }
+export interface WorkflowRun {
+  readonly workflowName: string;
+  readonly status: string;
+  readonly conclusion: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
 export interface GitHubReader {
   originRepo(): Promise<Repository | null>;
   currentPr(pr: PrNumber | null): Promise<PrContext>;
@@ -391,6 +428,13 @@ export interface GitHubReader {
   ): Promise<RollupPage>;
   reviewThreads(context: PrContext): Promise<readonly ReviewThread[]>;
   commitRollups(context: PrContext): Promise<readonly CommitRollup[]>;
+  reviews(context: PrContext): Promise<readonly PrReview[]>;
+  replyToThread(threadId: string, body: string): Promise<void>;
+  resolveThread(threadId: string): Promise<void>;
+  workflowRuns(
+    repository: Repository,
+    limit: number
+  ): Promise<readonly WorkflowRun[]>;
 }
 export interface PollingOptions {
   readonly interval: number;
@@ -398,4 +442,6 @@ export interface PollingOptions {
   readonly timeout: number;
   readonly maxQueryErrors: number;
   readonly allowDraft: boolean;
+  readonly awaitReview: readonly string[];
+  readonly reviewTimeout: number;
 }

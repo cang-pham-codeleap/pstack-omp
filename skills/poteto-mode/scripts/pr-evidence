@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Push PR evidence (screenshots, GIFs, videos) to branch evidence/<current
+# branch>, a commit on top of the working branch's HEAD that adds only
+# .pr-evidence/<file>, and print markdown that references each file by
+# commit-SHA permalink. GitHub has no API for PR attachments; a blob permalink
+# with ?raw=true renders inline. The PR branch itself never carries the files.
+# Uses git plumbing only: the caller's worktree, index, and HEAD are untouched.
+#
+# Usage: pr-evidence <file>...   (run in the PR's worktree, on its branch)
+# stdout: one markdown line per file; progress goes to stderr.
+set -euo pipefail
+
+[ $# -ge 1 ] || { echo "usage: pr-evidence <file>..." >&2; exit 1; }
+work=$(git branch --show-current)
+[ -n "$work" ] || { echo "detached HEAD: check out the PR branch first" >&2; exit 1; }
+branch="evidence/$work"
+dir=.pr-evidence
+for f in "$@"; do [ -f "$f" ] || { echo "not a file: $f" >&2; exit 1; }; done
+
+# Raw config, not get-url, so url.*.insteadOf rewrites don't hide the GitHub form.
+url=$(git config --get remote.origin.url)
+repo=$(printf '%s' "$url" | sed -E 's#^(git@github\.com:|ssh://git@github\.com/|https://github\.com/)##; s#\.git$##')
+[ "$repo" != "$url" ] || { echo "origin is not a GitHub URL: $url" >&2; exit 1; }
+
+export GIT_INDEX_FILE
+GIT_INDEX_FILE=$(mktemp)
+trap 'rm -f "$GIT_INDEX_FILE"' EXIT
+rm -f "$GIT_INDEX_FILE" # git wants an absent or valid index, not an empty file
+
+if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+	echo "fetching $branch" >&2
+	git fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch"
+	parent=$(git rev-parse "refs/remotes/origin/$branch")
+else
+	echo "creating $branch from $work" >&2
+	parent=$(git rev-parse HEAD)
+fi
+git read-tree "$parent"
+
+for f in "$@"; do
+	blob=$(git hash-object -w -- "$f")
+	git update-index --add --cacheinfo "100644,$blob,$dir/$(basename -- "$f")"
+done
+tree=$(git write-tree)
+
+if [ "$tree" = "$(git rev-parse "$parent^{tree}")" ]; then
+	sha=$parent
+	echo "no changes; reusing $sha" >&2
+else
+	sha=$(git commit-tree "$tree" -p "$parent" -m "evidence: $work")
+	echo "pushing $sha to $branch" >&2
+	git push --quiet origin "$sha:refs/heads/$branch" >&2
+fi
+
+for f in "$@"; do
+	name=$(basename -- "$f")
+	link="https://github.com/$repo/blob/$sha/$dir/$name"
+	case "$(printf '%s' "${name##*.}" | tr '[:upper:]' '[:lower:]')" in
+		png|jpg|jpeg|gif|webp) echo "![$name]($link?raw=true)" ;;
+		*) echo "[$name]($link)" ;;
+	esac
+done

@@ -76,6 +76,55 @@ describe("checks fallback chain", () => {
     );
     expect(reader.calls).toEqual(["checksFastPath", "checkRollupPage:null"]);
   });
+
+  const inRun = <C extends { link: string; workflow: string }>(
+    check: C,
+    runId: number
+  ): C => ({
+    ...check,
+    workflow: "Check Pull Request",
+    link: `https://github.com/owner/repo/actions/runs/${runId}/job/1`,
+  });
+
+  it("drops checks from a superseded run of the same workflow", async () => {
+    const reader = fakeReader({
+      fastPath: {
+        kind: "checks",
+        checks: [
+          inRun(failedCheck("status-check"), 38874333343),
+          inRun({ ...failedCheck("Detect Changes"), reportedState: "CANCELLED" }, 38874333343),
+          inRun(pendingCheck("status-check"), 38874340581),
+          inRun(pendingCheck("Detect Changes"), 38874340581),
+        ],
+      },
+    });
+    const read = await resolveChecks(reader, context);
+    expect(read.checks.map((check) => `${check.name}:${check.kind}`)).toEqual([
+      "status-check:pending",
+      "Detect Changes:pending",
+    ]);
+  });
+
+  it("keeps a failure in the newest run and checks without a run id", async () => {
+    const reader = fakeReader({
+      fastPath: { kind: "unusable", exitCode: 8, stderr: "" },
+      rollupPages: [
+        {
+          checks: [
+            inRun(passingCheck("status-check"), 100),
+            inRun(failedCheck("status-check"), 200),
+            failedCheck("external"),
+          ],
+          endCursor: null,
+        },
+      ],
+    });
+    const read = await resolveChecks(reader, context);
+    expect(read.checks.map((check) => `${check.name}:${check.kind}`)).toEqual([
+      "status-check:failed",
+      "external:failed",
+    ]);
+  });
 });
 
 describe("rollup node mapping", () => {
@@ -99,6 +148,19 @@ describe("rollup node mapping", () => {
         })
       ).toMatchObject({ kind, reportedState });
     }
+  });
+
+  it("reads the workflow name from the CheckRun's workflow run", () => {
+    expect(
+      mapRollupNode({
+        __typename: "CheckRun",
+        name: "ci",
+        status: "COMPLETED",
+        conclusion: "CANCELLED",
+        detailsUrl: "https://github.com/o/r/actions/runs/5/job/6",
+        checkSuite: { workflowRun: { workflow: { name: "Check Pull Request" } } },
+      })
+    ).toMatchObject({ kind: "failed", workflow: "Check Pull Request" });
   });
 
   it("classifies an in-progress Code Review Gate from the rollup as the gate", () => {

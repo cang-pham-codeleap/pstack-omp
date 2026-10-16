@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   Command,
@@ -9,15 +10,18 @@ import {
   GhGitHubReader,
   WatcherQueryError,
   discoverStack,
+  gitCommonDir,
   resolveContext,
 } from "./github.ts";
 import {
   runQueued,
+  runResolveThread,
   runSimple,
   statusQueryVerdict,
   verdictFactory,
   type WatchClock,
 } from "./policy.ts";
+import { updateShipState } from "./ship-state.ts";
 import { renderJson, renderPretty } from "./render.ts";
 import type * as T from "./types.ts";
 import { nonEmpty, parsePrNumber } from "./types.ts";
@@ -77,6 +81,8 @@ interface RawOptions {
   readonly maxQueryErrors: number;
   readonly statusOnly: boolean;
   readonly allowDraft: boolean;
+  readonly awaitReview: readonly string[];
+  readonly reviewTimeout: number;
   readonly pretty: boolean;
 }
 export function parseArgs(
@@ -85,7 +91,7 @@ export function parseArgs(
 ): CliOptions {
   const program = new Command("watch-pr")
     .description(
-      "Watch one pull request, a connected stack, or an immutable queued stack.\nJSON (NDJSON while polling) is the default; --pretty renders human text."
+      "Watch one pull request, a connected stack, or an immutable queued stack.\nJSON (NDJSON while polling) is the default; --pretty renders human text.\nSubcommands: resolve-thread (reply and resolve a review thread), ship-state (persist ship-to-green counters), eta (typical workflow durations from Actions history). Run each with --help."
     )
     .configureOutput({ writeOut: io.stdout, writeErr: io.stderr })
     .exitOverride()
@@ -126,13 +132,31 @@ export function parseArgs(
       positiveInteger,
       5
     )
-    .option("--status-only", "print one status table and exit 0", false)
+    .option(
+      "--await-review <login>",
+      "hold READY until this review bot has reviewed the head commit; repeatable",
+      reviewerLogin,
+      []
+    )
+    .option(
+      "--review-timeout <seconds>",
+      "give up awaiting reviews after this long with exit 9; 0 disables it",
+      nonNegativeNumber,
+      600
+    )
+    .option(
+      "--status-only",
+      "print one status table (with awaited review state) and exit 0",
+      false
+    )
     .option("--allow-draft", "do not treat a draft as a merge gate", false)
     .option("--pretty", "render human text instead of JSON", false);
   program.parse(argv, { from: "user" });
   const raw = program.opts<RawOptions>();
   if (raw.stackPrs !== undefined && !raw.queuedStack)
     program.error("error: --stack-prs requires --queued-stack");
+  if (raw.awaitReview.length > 0 && raw.queuedStack)
+    program.error("error: --await-review does not support --queued-stack");
   return {
     owner: raw.owner ?? null,
     repo: raw.repo ?? null,
@@ -147,6 +171,8 @@ export function parseArgs(
       timeout: raw.timeout,
       maxQueryErrors: raw.maxQueryErrors,
       allowDraft: raw.allowDraft,
+      awaitReview: raw.awaitReview,
+      reviewTimeout: raw.reviewTimeout,
     },
   };
 }
@@ -155,6 +181,7 @@ export interface CliRuntime {
   readonly clock: WatchClock;
   readonly stdout: (value: string) => void;
   readonly stderr: (value: string) => void;
+  readonly gitCommonDir: () => Promise<string>;
 }
 function realRuntime(): CliRuntime {
   return {
@@ -168,12 +195,235 @@ function realRuntime(): CliRuntime {
     },
     stdout: (value) => process.stdout.write(value),
     stderr: (value) => process.stderr.write(value),
+    gitCommonDir,
   };
+}
+function repoSlug(value: string): { owner: string; repo: string } {
+  const match = /^([^/\s]+)\/([^/\s]+)$/.exec(value);
+  if (match === null) throw new InvalidArgumentError("must be owner/name");
+  return { owner: match[1], repo: match[2] };
+}
+function reviewerLogin(value: string, previous: readonly string[]): string[] {
+  if (value.trim() === "")
+    throw new InvalidArgumentError("login cannot be empty");
+  return [...previous, value.trim()];
+}
+function shipIncrement(value: string, previous: readonly string[]): string[] {
+  if (value !== "review" && !/^ci:\S.*$/.test(value))
+    throw new InvalidArgumentError("must be review or ci:<checkName>");
+  return [...previous, value];
+}
+async function resolveThreadCommand(
+  argv: readonly string[],
+  runtime: CliRuntime
+): Promise<number> {
+  const command = new Command("watch-pr resolve-thread")
+    .description(
+      "Optionally reply to a review thread, then resolve it. Resolving a resolved thread succeeds quietly.\nThe thread node id is globally unique, so --pr and --repo only document the target."
+    )
+    .configureOutput({ writeOut: runtime.stdout, writeErr: runtime.stderr })
+    .exitOverride()
+    .requiredOption("--pr <number>", "pull request number", prNumber)
+    .requiredOption("--thread <nodeId>", "review thread GraphQL node id")
+    .option("--repo <owner/name>", "repository", repoSlug)
+    .addOption(
+      new Option("--body <text>", "reply text posted before resolving").conflicts(
+        "bodyFile"
+      )
+    )
+    .option("--body-file <path>", "read the reply text from a file")
+    .option(
+      "--max-query-errors <count>",
+      "consecutive query-error budget",
+      positiveInteger,
+      5
+    );
+  try {
+    command.parse(argv, { from: "user" });
+  } catch (error) {
+    if (!(error instanceof CommanderError)) throw error;
+    return error.exitCode === 0 ? 0 : 64;
+  }
+  const opts = command.opts<{
+    readonly thread: string;
+    readonly body?: string;
+    readonly bodyFile?: string;
+    readonly maxQueryErrors: number;
+  }>();
+  let body: string | null = opts.body ?? null;
+  try {
+    if (opts.bodyFile !== undefined) body = readFileSync(opts.bodyFile, "utf8");
+  } catch (error) {
+    if (!(error instanceof Error)) throw error;
+    runtime.stderr(`error: cannot read --body-file: ${error.message}\n`);
+    return 64;
+  }
+  if (body !== null && body.trim() === "") {
+    runtime.stderr("error: reply body cannot be empty\n");
+    return 64;
+  }
+  const result = await runResolveThread({
+    dependencies: {
+      reader: runtime.reader,
+      clock: runtime.clock,
+      emit: (verdict) => runtime.stdout(renderJson(verdict)),
+    },
+    threadId: opts.thread,
+    body,
+    options: {
+      interval: 60,
+      sweepInterval: 300,
+      timeout: 0,
+      maxQueryErrors: opts.maxQueryErrors,
+      allowDraft: false,
+      awaitReview: [],
+      reviewTimeout: 0,
+    },
+  });
+  if (result === "resolved") return 0;
+  runtime.stdout(renderJson(result));
+  return result.exitCode;
+}
+async function shipStateCommand(
+  argv: readonly string[],
+  runtime: CliRuntime
+): Promise<number> {
+  const command = new Command("watch-pr ship-state")
+    .description(
+      "Persist ship-to-green counters in <git-dir>/pstack-ship and print them as JSON."
+    )
+    .configureOutput({ writeOut: runtime.stdout, writeErr: runtime.stderr })
+    .exitOverride()
+    .requiredOption("--pr <number>", "pull request number", prNumber)
+    .option("--repo <owner/name>", "repository", repoSlug)
+    .option(
+      "--inc <counter>",
+      "increment review or ci:<checkName>; repeatable",
+      shipIncrement,
+      []
+    )
+    .option("--reset", "delete the saved state before recreating it", false);
+  try {
+    command.parse(argv, { from: "user" });
+  } catch (error) {
+    if (!(error instanceof CommanderError)) throw error;
+    return error.exitCode === 0 ? 0 : 64;
+  }
+  const opts = command.opts<{
+    readonly pr: T.PrNumber;
+    readonly repo?: { readonly owner: string; readonly repo: string };
+    readonly inc: readonly string[];
+    readonly reset: boolean;
+  }>();
+  try {
+    const context = await resolveContext({
+      reader: runtime.reader,
+      owner: opts.repo?.owner ?? null,
+      repo: opts.repo?.repo ?? null,
+      pr: opts.pr,
+    });
+    const state = updateShipState({
+      gitDir: await runtime.gitCommonDir(),
+      context,
+      increments: opts.inc,
+      reset: opts.reset,
+      now: runtime.clock.observedAt(),
+    });
+    runtime.stdout(`${JSON.stringify(state)}\n`);
+    return 0;
+  } catch (error) {
+    if (error instanceof WatcherQueryError) {
+      const verdict = statusQueryVerdict(
+        verdictFactory(runtime.clock, "single"),
+        1,
+        error.failure
+      );
+      runtime.stdout(renderJson(verdict));
+      return verdict.exitCode;
+    }
+    if (!(error instanceof Error)) throw error;
+    runtime.stderr(`error: ${error.message}\n`);
+    return 1;
+  }
+}
+// Nearest-rank percentile over ascending seconds.
+const percentile = (sorted: readonly number[], p: number): number =>
+  sorted[Math.max(0, Math.ceil((p / 100) * sorted.length) - 1)] ?? 0;
+function workflowEta(runs: readonly T.WorkflowRun[]) {
+  const durations: Record<string, number[]> = {};
+  for (const run of runs) {
+    if (run.status !== "completed" || run.conclusion !== "success") continue;
+    const seconds = Math.round(
+      (Date.parse(run.updatedAt) - Date.parse(run.createdAt)) / 1_000
+    );
+    (durations[run.workflowName] ??= []).push(seconds);
+  }
+  return Object.fromEntries(
+    Object.entries(durations).map(([name, values]) => {
+      const sorted = values.sort((a, b) => a - b);
+      return [
+        name,
+        { n: sorted.length, p50: percentile(sorted, 50), p90: percentile(sorted, 90) },
+      ];
+    })
+  );
+}
+async function etaCommand(
+  argv: readonly string[],
+  runtime: CliRuntime
+): Promise<number> {
+  const command = new Command("watch-pr eta")
+    .description(
+      "Print p50/p90 seconds of successful GitHub Actions runs per workflow (CI, Copilot review, approver)."
+    )
+    .configureOutput({ writeOut: runtime.stdout, writeErr: runtime.stderr })
+    .exitOverride()
+    .option("--repo <owner/name>", "repository", repoSlug)
+    .option("--limit <count>", "runs to sample", positiveInteger, 200);
+  try {
+    command.parse(argv, { from: "user" });
+  } catch (error) {
+    if (!(error instanceof CommanderError)) throw error;
+    return error.exitCode === 0 ? 0 : 64;
+  }
+  const opts = command.opts<{
+    readonly repo?: T.Repository;
+    readonly limit: number;
+  }>();
+  try {
+    const repository = opts.repo ?? (await runtime.reader.originRepo());
+    if (repository === null) {
+      runtime.stderr("error: no origin remote; pass --repo owner/name\n");
+      return 64;
+    }
+    const runs = await runtime.reader.workflowRuns(repository, opts.limit);
+    runtime.stdout(
+      `${JSON.stringify({
+        repo: `${repository.owner}/${repository.repo}`,
+        sampled: runs.length,
+        workflows: workflowEta(runs),
+      })}\n`
+    );
+    return 0;
+  } catch (error) {
+    if (!(error instanceof WatcherQueryError)) throw error;
+    const verdict = statusQueryVerdict(
+      verdictFactory(runtime.clock, "single"),
+      1,
+      error.failure
+    );
+    runtime.stdout(renderJson(verdict));
+    return verdict.exitCode;
+  }
 }
 export async function main(
   argv: readonly string[],
   runtime: CliRuntime = realRuntime()
 ): Promise<number> {
+  if (argv[0] === "resolve-thread")
+    return resolveThreadCommand(argv.slice(1), runtime);
+  if (argv[0] === "ship-state") return shipStateCommand(argv.slice(1), runtime);
+  if (argv[0] === "eta") return etaCommand(argv.slice(1), runtime);
   let options: CliOptions;
   try {
     options = parseArgs(argv, runtime);

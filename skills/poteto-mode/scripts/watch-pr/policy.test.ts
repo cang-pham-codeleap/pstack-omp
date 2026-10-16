@@ -40,6 +40,8 @@ const options = {
   timeout: 0,
   maxQueryErrors: 5,
   allowDraft: false,
+  awaitReview: [],
+  reviewTimeout: 600,
 } satisfies PollingOptions;
 
 describe("readiness truth table", () => {

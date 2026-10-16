@@ -5,10 +5,12 @@ import type {
   GitHubReader,
   OpenPullRequest,
   PrContext,
+  PrReview,
   PullRequestFacts,
   Repository,
   ReviewThread,
   RollupPage,
+  WorkflowRun,
 } from "./types.ts";
 import { parsePrNumber } from "./types.ts";
 
@@ -18,9 +20,11 @@ export interface FakeReaderOptions {
   readonly rollupPages?: readonly RollupPage[];
   readonly threads?: readonly ReviewThread[];
   readonly commitRollups?: readonly CommitRollup[];
+  readonly reviews?: readonly PrReview[];
   readonly openPullRequests?: readonly OpenPullRequest[];
   readonly origin?: Repository | null;
   readonly current?: PrContext;
+  readonly workflowRuns?: readonly WorkflowRun[];
 }
 
 export function passingCheck(name = "ci"): Check {
@@ -113,6 +117,20 @@ export function fakeReader(
     async commitRollups() {
       calls.push("commitRollups");
       return options.commitRollups ?? [{ oid: "head", state: "SUCCESS" }];
+    },
+    async reviews() {
+      calls.push("reviews");
+      return options.reviews ?? [];
+    },
+    async replyToThread(threadId, body) {
+      calls.push(`reply:${threadId}:${body}`);
+    },
+    async resolveThread(threadId) {
+      calls.push(`resolve:${threadId}`);
+    },
+    async workflowRuns(repository, limit) {
+      calls.push(`workflowRuns:${repository.owner}/${repository.repo}:${limit}`);
+      return options.workflowRuns ?? [];
     },
   };
 }
