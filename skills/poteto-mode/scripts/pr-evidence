@@ -2,7 +2,9 @@
 # Push PR evidence (screenshots, GIFs, videos) to branch evidence/<current
 # branch> and print markdown that references each file by commit-SHA
 # permalink. GitHub has no API for PR attachments; a blob permalink with
-# ?raw=true renders inline. The PR branch itself never carries the files.
+# ?raw=true renders images inline, but a committed video only shows "View
+# raw", so each video also gets a GIF (ffmpeg) that plays in the PR body, with
+# the original linked below it. The PR branch itself never carries the files.
 # The evidence branch holds only .pr-evidence/: its first commit has no parent,
 # so pushing it shares no history with the code and triggers no CI or preview
 # deploys. Uses git plumbing only: the caller's worktree, index, and HEAD are
@@ -20,14 +22,33 @@ work=$(git branch --show-current)
 branch="evidence/$work"
 dir=.pr-evidence
 
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+files=()
 names=()
+add() {
+	local seen
+	for seen in ${names[@]+"${names[@]}"}; do
+		[ "$seen" != "$2" ] || { echo "duplicate file name: $2 (rename one, e.g. before-$2)" >&2; exit 1; }
+	done
+	files+=("$1")
+	names+=("$2")
+}
 for f in "$@"; do
 	[ -f "$f" ] || { echo "not a file: $f" >&2; exit 1; }
 	name=$(basename -- "$f")
-	for seen in ${names[@]+"${names[@]}"}; do
-		[ "$seen" != "$name" ] || { echo "duplicate file name: $name (rename one, e.g. before-$name)" >&2; exit 1; }
-	done
-	names+=("$name")
+	case "$(printf '%s' "${name##*.}" | tr '[:upper:]' '[:lower:]')" in
+		mp4|webm|mov|mkv)
+			command -v ffmpeg >/dev/null || { echo "ffmpeg is required to turn $name into a GIF" >&2; exit 1; }
+			gif="$tmp/${name%.*}.gif"
+			echo "converting $name to GIF" >&2
+			ffmpeg -v error -y -i "$f" -vf "fps=10,scale='min(960,iw)':-2:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse" "$gif"
+			size=$(wc -c <"$gif")
+			[ "$size" -le 10000000 ] || echo "warning: $(basename -- "$gif") is $((size / 1000000)) MB; GitHub may not render it inline, so record a shorter clip" >&2
+			add "$gif" "$(basename -- "$gif")"
+			;;
+	esac
+	add "$f" "$name"
 done
 
 # gh resolves the remote itself, so SSH host aliases work and URL userinfo
@@ -37,10 +58,7 @@ head=$(git rev-parse HEAD)
 pr_head=$(gh pr view --json headRefOid --jq .headRefOid)
 [ "$head" = "$pr_head" ] || { echo "local HEAD $head is not the PR head $pr_head; push or pull first" >&2; exit 1; }
 
-export GIT_INDEX_FILE
-GIT_INDEX_FILE=$(mktemp)
-trap 'rm -f "$GIT_INDEX_FILE"' EXIT
-rm -f "$GIT_INDEX_FILE" # git wants an absent or valid index, not an empty file
+export GIT_INDEX_FILE="$tmp/index" # absent until git writes it
 
 parent=()
 if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
@@ -52,9 +70,9 @@ else
 	echo "creating $branch with no parent" >&2
 fi
 
-for f in "$@"; do
-	blob=$(git hash-object -w -- "$f")
-	git update-index --add --cacheinfo "100644,$blob,$dir/$(basename -- "$f")"
+for i in "${!files[@]}"; do
+	blob=$(git hash-object -w -- "${files[$i]}")
+	git update-index --add --cacheinfo "100644,$blob,$dir/${names[$i]}"
 done
 tree=$(git write-tree)
 
