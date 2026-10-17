@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent workflow monitor</title>
+<style>
+:root{
+  --bg:#EEF1F6;--surface:#FFFFFF;--sunk:#E3E8F0;--ink:#14213D;--muted:#5A6782;--line:#D3DAE6;
+  --accent:#3D52D5;--accent-soft:#E2E6FB;--ok:#1E8A55;--ok-soft:#DDF3E7;--warn:#B87700;--warn-soft:#FBF0D5;
+  --bad:#C0392B;--bad-soft:#FBE1DE;--purple:#7A4BC9;--purple-soft:#EEE5FB;
+  --sans:system-ui,-apple-system,"Segoe UI",sans-serif;--mono:ui-monospace,Menlo,Consolas,monospace;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0F1524;--surface:#172036;--sunk:#111a2c;--ink:#E6EBF5;--muted:#93A0BC;--line:#2A3654;--accent:#7D8FFF;--accent-soft:#232E5C;
+  --ok:#4CC88A;--ok-soft:#163626;--warn:#E8B04A;--warn-soft:#3A2E12;--bad:#F07A6C;--bad-soft:#3E1D1A;--purple:#B592F5;--purple-soft:#2E2148;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0F1524;--surface:#172036;--sunk:#111a2c;--ink:#E6EBF5;--muted:#93A0BC;--line:#2A3654;--accent:#7D8FFF;--accent-soft:#232E5C;
+  --ok:#4CC88A;--ok-soft:#163626;--warn:#E8B04A;--warn-soft:#3A2E12;--bad:#F07A6C;--bad-soft:#3E1D1A;--purple:#B592F5;--purple-soft:#2E2148;color-scheme:dark}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans)}
+button{font:inherit;color:inherit}
+a{color:var(--accent)}
+.wrap{max-width:1360px;margin:0 auto;padding:20px clamp(12px,3vw,32px) 40px}
+header{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between;margin-bottom:16px}
+h1{font-size:1.5rem;font-weight:700;margin:0}
+.sub{color:var(--muted);font-size:.9rem;margin-top:2px;display:flex;align-items:center;gap:8px}
+.live{width:9px;height:9px;border-radius:50%;background:var(--muted)}
+.live.on{background:var(--ok);animation:pulse 1.6s infinite}
+.live.stale{background:var(--bad)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ok) 60%,transparent)}100%{box-shadow:0 0 0 9px transparent}}
+.btn{border:1px solid var(--line);background:var(--surface);padding:7px 14px;border-radius:8px;cursor:pointer;font-weight:500}
+.btn:hover{border-color:var(--accent)}
+.request{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 16px;margin-bottom:16px;display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:.9rem}
+.request b{color:var(--muted);font-weight:500}
+.pipeline{display:grid;grid-template-columns:repeat(var(--stages,6),minmax(0,1fr));margin-bottom:16px;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.agent{padding:14px 14px 16px;border-right:1px solid var(--line);position:relative;min-width:0}
+.agent:last-child{border-right:0}
+.agent.working{background:linear-gradient(180deg,var(--accent-soft),transparent 70%)}
+.agent.waiting{background:linear-gradient(180deg,var(--warn-soft),transparent 70%)}
+.agent.failed{background:linear-gradient(180deg,var(--bad-soft),transparent 70%)}
+.agent .num{font-family:var(--mono);font-size:.75rem;color:var(--muted)}
+.agent h3{margin:2px 0 8px;font-size:1rem;font-weight:600}
+.state{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--sunk);color:var(--muted)}
+.state::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.state.working{background:var(--accent-soft);color:var(--accent)}
+.state.waiting{background:var(--warn-soft);color:var(--warn)}
+.state.done{background:var(--ok-soft);color:var(--ok)}
+.state.failed{background:var(--bad-soft);color:var(--bad)}
+.agent .task{margin-top:10px;font-size:.85rem;min-height:3.9em}
+.agent .task b{font-family:var(--mono);font-weight:500;font-size:.8rem}
+.agent .step{color:var(--muted);font-size:.82rem;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.queue{margin-top:8px;font-size:.75rem;color:var(--muted)}
+.agent .arrow{position:absolute;right:-9px;top:18px;width:16px;height:16px;background:var(--surface);border:1px solid var(--line);border-left:0;border-bottom:0;transform:rotate(45deg);z-index:1}
+.agent:last-child .arrow{display:none}
+.stats{display:flex;flex-wrap:wrap;gap:8px 28px;margin:0 0 16px;padding:0 4px}
+.stat{display:flex;align-items:baseline;gap:8px}
+.stat strong{font-size:1.6rem;font-weight:600;font-variant-numeric:tabular-nums}
+.stat span{color:var(--muted);font-size:.85rem}
+.grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:20px;align-items:start}
+.col{display:grid;gap:20px;min-width:0}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;min-width:0}
+.panel>h2{font-size:.95rem;margin:0;padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px}
+.panel>h2 small{color:var(--muted);font-weight:400}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:none;padding:3px 10px;cursor:pointer;font-size:.8rem}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.tablewrap{overflow-x:auto;max-height:520px;overflow-y:auto}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th{text-align:left;font-weight:500;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0;background:var(--surface)}
+td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:var(--sunk)}
+tbody tr.sel{background:var(--accent-soft)}
+td.key{font-family:var(--mono);font-size:.82rem;white-space:nowrap}
+td.title{max-width:300px}
+.dots{display:flex;gap:3px}
+.dots i{width:14px;height:6px;border-radius:2px;background:var(--sunk)}
+.dots i.done{background:var(--ok)}.dots i.cur{background:var(--accent)}.dots i.wait{background:var(--warn)}.dots i.fail{background:var(--bad)}
+.pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:.78rem;font-weight:600;white-space:nowrap}
+.j-todo{background:var(--sunk);color:var(--muted)}.j-prog{background:var(--accent-soft);color:var(--accent)}
+.j-review{background:var(--purple-soft);color:var(--purple)}.j-done{background:var(--ok-soft);color:var(--ok)}.j-bad{background:var(--bad-soft);color:var(--bad)}
+.s-working{color:var(--accent)}.s-waiting{color:var(--warn)}.s-done{color:var(--ok)}.s-failed{color:var(--bad)}.s-none{color:var(--muted)}
+.prlink{font-family:var(--mono);font-size:.8rem;white-space:nowrap}
+.detail{padding:14px 16px 16px}
+.detail .dhead{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin-bottom:4px}
+.detail .dhead b{font-family:var(--mono);font-weight:500}
+.detail h4{margin:0 0 12px;font-size:1.05rem;font-weight:600}
+.timeline{list-style:none;margin:0;padding:0;border-left:2px solid var(--line);margin-left:6px}
+.timeline li{position:relative;padding:0 0 10px 16px;font-size:.85rem}
+.timeline li::before{content:"";position:absolute;left:-7px;top:5px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--line)}
+.timeline li.ok::before{border-color:var(--ok);background:var(--ok)}
+.timeline li.bad::before{border-color:var(--bad);background:var(--bad)}
+.timeline li.warn::before{border-color:var(--warn);background:var(--warn-soft)}
+.timeline li.jira::before{border-color:var(--purple);background:var(--purple)}
+.timeline time{font-family:var(--mono);font-size:.75rem;color:var(--muted);margin-right:6px}
+.empty{color:var(--muted);font-size:.9rem;padding:18px 16px}
+.now{padding:14px 16px}
+.now .big{font-size:1.05rem;font-weight:600}
+.now .muted{color:var(--muted);font-size:.85rem}
+.checklist{list-style:none;margin:10px 0 0;padding:0;font-size:.85rem}
+.checklist li{display:flex;gap:8px;padding:3px 0;align-items:baseline}
+.checklist li span:last-child{color:var(--muted);font-size:.8rem;margin-left:auto;text-align:right}
+.usage{padding:10px 16px 14px;display:grid;gap:10px}
+.limit .lh{display:flex;justify-content:space-between;font-size:.85rem;gap:8px}
+.limit .lh small{color:var(--muted)}
+.limit.mine .lh b::after{content:" · this session";color:var(--accent);font-weight:500;font-size:.75rem}
+.meter{height:6px;background:var(--sunk);border-radius:4px;overflow:hidden;margin-top:4px}
+.meter i{display:block;height:100%;background:var(--ok)}
+.meter i.warn{background:var(--warn)}.meter i.bad{background:var(--bad)}
+.log{font-family:var(--mono);font-size:.78rem;line-height:1.55;height:520px;overflow:auto;padding:10px 14px;background:var(--sunk);border-radius:0 0 14px 14px}
+.log div{white-space:pre-wrap;word-break:break-word;padding:1px 0}
+.log time{color:var(--muted)}
+.log .ag{font-weight:500}
+.log .ok{color:var(--ok)}.log .bad{color:var(--bad)}.log .jira{color:var(--purple)}.log .warn{color:var(--warn)}
+@media (max-width:1100px){
+  .pipeline{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .agent:nth-child(3n){border-right:0}.agent:nth-child(-n+3){border-bottom:1px solid var(--line)}
+  .agent .arrow{display:none}.grid{grid-template-columns:minmax(0,1fr)}.log{height:360px}}
+@media (prefers-reduced-motion:reduce){.live.on{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1 id="title">Agent workflow monitor</h1>
+      <div class="sub"><span class="live" id="liveDot"></span><span id="liveText">Loading…</span></div>
+    </div>
+    <button class="btn" id="themeBtn" aria-label="Toggle theme">◐</button>
+  </header>
+  <div class="request"><b>Your request</b><span id="request"></span><b>Running now</b><span id="current"></span></div>
+  <section class="pipeline" id="pipeline" aria-label="Agent pipeline"></section>
+  <div class="stats" id="stats"></div>
+  <div class="grid">
+    <div class="col">
+      <section class="panel">
+        <h2>Tickets <span class="seg" id="filters"></span></h2>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Ticket</th><th>Summary</th><th>Pipeline</th><th>Agent status</th><th>Jira</th><th>PR</th></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table></div>
+      </section>
+      <section class="panel">
+        <h2>Ticket activity <small>select a ticket</small></h2>
+        <div id="detail"><div class="empty">Choose a ticket to see every agent step and Jira transition.</div></div>
+      </section>
+    </div>
+    <div class="col">
+      <section class="panel">
+        <h2>Current task <small id="stepCount"></small></h2>
+        <div class="now" id="now"></div>
+      </section>
+      <section class="panel" id="usagePanel" hidden>
+        <h2>Usage remaining <small id="usageAt"></small></h2>
+        <div class="usage" id="usage"></div>
+      </section>
+      <section class="panel">
+        <h2>Live agent log <small id="logCount"></small></h2>
+        <div class="log" id="log" aria-live="polite"></div>
+      </section>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+let STAGES=[],config={},data=null,usage=null,selected=null,filter="Active";
+const STATE_LABEL={idle:"Idle",working:"Working",waiting:"Waiting for you",done:"Done",failed:"Failed"};
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const linkify=s=>esc(s).replace(/(https?:\/\/[^\s)]+)/g,u=>`<a href="${u}" target="_blank" rel="noopener">${u.replace(/^https:\/\/github\.com\//,"")}</a>`);
+const hhmm=iso=>iso?new Date(iso).toTimeString().slice(0,8):"";
+const stageName=id=>(STAGES.find(s=>s[0]===id)||[,"System"])[1];
+function jiraClass(s){s=(s||"").toLowerCase();
+  if(/done|ready for qa|testing in dev/.test(s))return"j-done";
+  if(/review/.test(s))return"j-review";
+  if(/progress/.test(s))return"j-prog";
+  if(/reject|block/.test(s))return"j-bad";
+  return"j-todo";}
+function relTime(iso){if(!iso)return"";const m=Math.round((new Date(iso)-Date.now())/60000);
+  if(m<=0)return"now";return m<60?`in ${m}m`:m<2880?`in ${Math.round(m/60)}h`:`in ${Math.round(m/1440)}d`;}
+
+function renderPipeline(){
+  const tickets=data.tickets||[];
+  const p=document.getElementById("pipeline");p.style.setProperty("--stages",STAGES.length);
+  p.innerHTML=STAGES.map(([id,name],i)=>{
+    const a=data.agents?.[id]||{state:"idle"},t=a.ticket&&tickets.find(x=>x.key===a.ticket);
+    const queued=tickets.filter(x=>x.stage===i&&x.key!==a.ticket&&x.agentStatus!=="working").length;
+    const busy=a.state!=="idle";
+    return `<div class="agent ${a.state}"><span class="num">${i+1} of ${STAGES.length}</span><h3>${esc(name)}</h3>
+      <span class="state ${a.state}">${STATE_LABEL[a.state]||a.state}</span>
+      <div class="task">${busy&&a.ticket?`<b>${esc(a.ticket)}</b> ${esc(t?.summary?.replace(/^\[[^\]]+\]\[[^\]]+\]\s*/,"")||"")}<span class="step">${esc(a.step)}</span>`:`<span class="step">${busy?esc(a.step):"Waiting for work"}</span>`}</div>
+      <div class="queue">${queued} queued${a.at?" · "+hhmm(a.at):""}</div><span class="arrow"></span></div>`;}).join("");
+}
+function renderStats(){
+  const t=data.tickets||[],agents=Object.values(data.agents||{});
+  const mine=t.filter(x=>x.stage!=null&&x.stage<STAGES.length);
+  const prs=t.filter(x=>x.pr&&!/done|ready for qa|testing in dev/i.test(x.status||"")).length;
+  const sess=(usage?.limits||[]).filter(l=>(!config.usageProvider||l.provider===config.usageProvider)&&l.remainingFraction!=null);
+  const low=sess.length?Math.min(...sess.map(l=>l.remainingFraction)):null;
+  document.getElementById("stats").innerHTML=
+   `<div class="stat"><strong>${agents.filter(a=>a.state==="working").length}</strong><span>agents working</span></div>
+    <div class="stat"><strong>${agents.filter(a=>a.state==="waiting").length}</strong><span>waiting for you</span></div>
+    <div class="stat"><strong>${mine.length}</strong><span>tickets in the pipeline</span></div>
+    <div class="stat"><strong>${prs}</strong><span>open PRs</span></div>
+    ${usage?`<div class="stat"><strong>${low==null?"—":Math.round(low*100)+"%"}</strong><span>${esc(config.usageProvider||"model")} usage left (tightest window)</span></div>`:""}`;
+}
+function renderTickets(){
+  const all=data.tickets||[];
+  const groups={Active:x=>x.stage!=null&&x.stage<STAGES.length,...Object.fromEntries(Object.entries(config.ticketFilters||{}).map(([k,re])=>[k,x=>new RegExp(re).test(x.summary||"")])),All:()=>true};
+  if(!groups[filter])filter="Active";
+  document.getElementById("filters").innerHTML=Object.keys(groups).map(k=>`<button data-f="${k}" aria-pressed="${k===filter}">${k} ${all.filter(groups[k]).length}</button>`).join("");
+  const rows=all.filter(groups[filter]).sort((a,b)=>(b.stage!=null)-(a.stage!=null)||a.key.localeCompare(b.key));
+  document.getElementById("tbody").innerHTML=rows.map(t=>{
+    const st=t.stage,as=t.agentStatus;
+    const dots=STAGES.map((s,i)=>{let c="";if(st!=null){if(i<st)c="done";else if(i===st)c=as==="working"?"cur":as==="waiting"?"wait":as==="failed"?"fail":"";}return `<i class="${c}" title="${s[1]}"></i>`}).join("");
+    const label=st==null?["Not picked up","s-none"]:st>=STAGES.length?["Complete","s-done"]:as==="working"?["Working · "+STAGES[st][1],"s-working"]:as==="waiting"?["Waiting for you · "+STAGES[st][1],"s-waiting"]:as==="failed"?["Failed · "+STAGES[st][1],"s-failed"]:["Next · "+STAGES[st][1],"s-none"];
+    return `<tr data-key="${esc(t.key)}" class="${selected===t.key?"sel":""}" tabindex="0">
+      <td class="key">${config.jiraBaseUrl?`<a href="${esc(config.jiraBaseUrl.replace(/\/$/,""))}/browse/${esc(t.key)}" target="_blank" rel="noopener">${esc(t.key)}</a>`:esc(t.key)}</td>
+      <td class="title">${esc(t.summary)}</td><td><div class="dots">${dots}</div></td>
+      <td class="${label[1]}">${esc(label[0])}</td>
+      <td><span class="pill ${jiraClass(t.status)}">${esc(t.status||"—")}</span></td>
+      <td>${t.pr?`<a class="prlink" href="${esc(t.pr)}" target="_blank" rel="noopener">#${esc(t.pr.split("/").pop())}</a>`:""}</td></tr>`;}).join("");
+}
+function renderDetail(){
+  const d=document.getElementById("detail"),t=selected&&(data.tickets||[]).find(x=>x.key===selected);
+  if(!t)return;
+  const items=(data.log||[]).filter(l=>l.ticket===t.key).slice(-40).map(l=>`<li class="${esc(l.cls)}"><time>${hhmm(l.at)}</time><strong>${esc(stageName(l.agent))}</strong> ${linkify(l.text)}</li>`).join("");
+  d.innerHTML=`<div class="detail"><div class="dhead"><b>${esc(t.key)}</b><span class="pill ${jiraClass(t.status)}">${esc(t.status||"—")}</span>${t.assignee?`<span>${esc(t.assignee)}</span>`:""}${t.pr?`<a class="prlink" href="${esc(t.pr)}" target="_blank" rel="noopener">${esc(t.pr.replace("https://github.com/",""))}</a>`:""}</div>
+    <h4>${esc(t.summary)}</h4>${t.note?`<div class="now muted" style="padding:0 0 10px">${linkify(t.note)}</div>`:""}
+    ${items?`<ol class="timeline">${items}</ol>`:`<div class="empty" style="padding:0">No agent activity recorded for this ticket yet.</div>`}</div>`;
+}
+function renderNow(){
+  const steps=data.steps||[];
+  document.getElementById("stepCount").textContent=steps.length?`${steps.filter(s=>s.status==="done").length} of ${steps.length} done`:"";
+  const mark={done:"✓",running:"▸",blocked:"⏸",skipped:"–",pending:"○"};
+  document.getElementById("now").innerHTML=`<div class="big">${linkify(data.current?.step)}</div><div class="muted">${linkify(data.current?.detail)}</div>
+    ${steps.length?`<ul class="checklist">${steps.map(s=>`<li class="${s.status==="done"?"s-done":s.status==="running"?"s-working":s.status==="blocked"?"s-waiting":"s-none"}"><span>${mark[s.status]||"○"}</span><span>${esc(s.name)}</span><span>${linkify(s.note)}</span></li>`).join("")}</ul>`:""}`;
+}
+function renderUsage(){
+  const el=document.getElementById("usage");
+  document.getElementById("usagePanel").hidden=!usage;
+  if(!usage)return;
+  document.getElementById("usageAt").textContent=usage.fetchedAt?"fetched "+hhmm(usage.fetchedAt):"";
+  const mine=l=>!!config.usageProvider&&l.provider===config.usageProvider;
+  const limits=[...(usage.limits||[])].sort((a,b)=>mine(b)-mine(a));
+  el.innerHTML=(usage.error?`<div class="s-failed" style="font-size:.8rem">${esc(usage.error)}</div>`:"")+limits.map(l=>{
+    const f=l.remainingFraction,p=f==null?null:Math.round(f*100),c=f==null?"":f<.1?"bad":f<.25?"warn":"";
+    const abs=l.unit&&l.unit!=="percent"&&l.remaining!=null?` · ${l.remaining.toLocaleString()} of ${l.limit?.toLocaleString()} ${esc(l.unit)}`:"";
+    return `<div class="limit ${mine(l)?"mine":""}"><div class="lh"><b>${esc(l.provider)} · ${esc(l.label)}</b><span>${p==null?"—":p+"% left"}</span></div>
+      <div class="meter"><i class="${c}" style="width:${p??0}%"></i></div>
+      <div class="lh"><small>${esc(l.window)}${abs}</small><small>${l.resetsAt?"resets "+relTime(l.resetsAt):""}</small></div></div>`;}).join("");
+}
+function renderLog(){
+  const L=document.getElementById("log"),stick=L.scrollTop+L.clientHeight>=L.scrollHeight-30;
+  const lines=data.log||[];
+  L.innerHTML=lines.map(l=>`<div class="${esc(l.cls)}"><time>${hhmm(l.at)}</time> <span class="ag">[${esc(stageName(l.agent))}]</span> ${l.ticket?esc(l.ticket)+" ":""}${linkify(l.text)}</div>`).join("");
+  if(stick)L.scrollTop=L.scrollHeight;
+  document.getElementById("logCount").textContent=lines.length+" events";
+}
+function render(){
+  const age=Math.round((Date.now()-new Date(data.updatedAt))/60000),busy=Object.values(data.agents||{}).some(a=>a.state==="working");
+  const dot=document.getElementById("liveDot");dot.className="live "+(age>30?"stale":busy?"on":"");
+  document.getElementById("liveText").textContent=`${busy?"Live":"Idle"} · updated ${age} min ago`;
+  document.title=config.title?`${config.title} · Agent workflow monitor`:"Agent workflow monitor";
+  document.getElementById("title").textContent=config.title||"Agent workflow monitor";
+  document.getElementById("request").innerHTML=linkify(data.request)||"—";
+  document.getElementById("current").innerHTML=linkify(data.current?.step);
+  renderPipeline();renderStats();renderTickets();renderDetail();renderNow();renderUsage();renderLog();
+}
+async function load(){
+  try{
+    const get=f=>fetch(f+"?"+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null);
+    const [s,u,c]=await Promise.all([fetch("status.json?"+Date.now()).then(r=>r.json()),get("usage.json"),get("config.json")]);
+    config=c||{};STAGES=(config.stages||[]).map(x=>[x.id,x.label||x.id]);
+    data=s;usage=u;render();
+  }catch(e){document.getElementById("liveText").textContent="Cannot read status.json: "+e;}
+}
+document.getElementById("filters").addEventListener("click",e=>{const b=e.target.closest("button");if(b){filter=b.dataset.f;render()}});
+document.getElementById("tbody").addEventListener("click",e=>{if(e.target.closest("a"))return;const tr=e.target.closest("tr");if(tr){selected=tr.dataset.key;render()}});
+document.getElementById("tbody").addEventListener("keydown",e=>{if(e.key==="Enter"){const tr=e.target.closest("tr");if(tr){selected=tr.dataset.key;render()}}});
+document.getElementById("themeBtn").onclick=()=>{const r=document.documentElement,dark=r.dataset.theme?r.dataset.theme==="dark":matchMedia("(prefers-color-scheme: dark)").matches;r.dataset.theme=dark?"light":"dark"};
+load();setInterval(load,3000);
+})();
+</script>
+</body>
+</html>

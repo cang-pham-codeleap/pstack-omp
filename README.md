@@ -149,6 +149,7 @@ the full rules and playbooks live in [`skills/poteto-mode/SKILL.md`](./skills/po
 | [`/skill:unslop`](./skills/unslop/SKILL.md) | you're cleaning up writing. removes AI tells. |
 | [`/skill:bro`](./skills/bro/SKILL.md) | you want the last message restated in plain human language, no jargon. |
 | [`/skill:technical-writing`](./skills/technical-writing/SKILL.md) | layered doc standard (Diátaxis + Google developer style + STE + Global English) for docs, RFCs, readmes, PR descriptions, commit messages. |
+| [`/skill:agent-status`](./skills/agent-status/SKILL.md) | you want a local dashboard of what the agent is doing in this project: pipeline agents, todo steps, tickets with tracker status and PRs, a live log, model usage. on omp it starts on every prompt at `http://localhost:55749`; `python3 skills/agent-status/scripts/agent-status.py stop` stops it, `.agent-status/config.json` configures it. |
 
 </details>
 

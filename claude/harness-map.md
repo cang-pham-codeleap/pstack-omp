@@ -26,6 +26,7 @@ pstack is installed as a Claude Code plugin. Its skills are written for omp (oh-
 - `~/.omp/agent/config.yml`, `.omp/config.yml`, `modelRoles.pstack-*`, `task.agentModelOverrides`, `task.eager`, `skills.enableSkillCommands` → not used. Role models live in the `model:` field of `{{PSTACK_ROOT}}/claude/agents/*.md`.
 - `task.maxConcurrency` → no Claude Code setting. Keep the playbook's own live-agent limit as written.
 - `/skill:setup-pstack` → omp only. On Claude Code, confirm `/agents` lists the `pstack:*` agents and point the user to `claude/agents/*.md` to change role models. Do not write omp config.
+- `hooks/pre/agent-status.ts` (the **agent-status** skill's auto-start) → omp only. On Claude Code, run `python3 {{PSTACK_ROOT}}/skills/agent-status/scripts/agent-status.py serve` when the user asks for the dashboard, and post progress with the same script.
 - `omp models`, `omp --model ... -p` → `claude --model <id> -p "ok"` to smoke-test a model.
 - `~/.omp/agent/sessions/<encoded-cwd>/` → `~/.claude/projects/<cwd with every / and . replaced by ->/` (`*.jsonl` per session; subagent transcripts under `<sessionId>/subagents/`).
 - `.omp/skills/` → `.claude/skills/`. `~/.omp/agent/skills/` → `~/.claude/skills/`. `.omp/mcp.json`, `~/.omp/agent/mcp.json` → `.mcp.json`, `claude mcp add`.
