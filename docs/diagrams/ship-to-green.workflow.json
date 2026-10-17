@@ -1,0 +1,302 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Ship to green: một human gate, còn lại là agentic",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    {
+      "id": "human",
+      "label": "Human gate"
+    },
+    {
+      "id": "coord",
+      "label": "Coordinator (main agent)"
+    },
+    {
+      "id": "agents",
+      "label": "Phase agents"
+    },
+    {
+      "id": "github",
+      "label": "GitHub PR"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p_gate",
+      "label": "Human gate duy nhất",
+      "fromCol": 0,
+      "toCol": 1,
+      "variant": "security"
+    },
+    {
+      "id": "p_loop",
+      "label": "Agentic workflow · không hỏi human",
+      "fromCol": 2,
+      "toCol": 5,
+      "variant": "emphasis"
+    }
+  ],
+  "groups": [
+    {
+      "id": "g_gate",
+      "label": "HUMAN GATE DUY NHẤT",
+      "lane": "human",
+      "fromCol": 0,
+      "toCol": 1,
+      "variant": "security"
+    },
+    {
+      "id": "g_loop",
+      "label": "Fix loop đến khi CI + review pass",
+      "lane": "agents",
+      "fromCol": 3,
+      "toCol": 5,
+      "variant": "emphasis"
+    }
+  ],
+  "mainPath": [
+    "human",
+    "intake",
+    "preflight",
+    "builder",
+    "watcher",
+    "decide",
+    "approver",
+    "done"
+  ],
+  "nodes": [
+    {
+      "id": "human",
+      "lane": "human",
+      "col": 0,
+      "type": "external",
+      "label": "Human",
+      "sublabel": "định nghĩa ticket / goal",
+      "width": 150
+    },
+    {
+      "id": "intake",
+      "lane": "human",
+      "col": 1,
+      "type": "security",
+      "label": "Ticket intake",
+      "sublabel": "hỏi đáp tới khi ready",
+      "tag": "agent-ready + sha256",
+      "width": 150
+    },
+    {
+      "id": "preflight",
+      "lane": "coord",
+      "col": 2,
+      "type": "backend",
+      "label": "Preflight",
+      "sublabel": "gh auth · approver · eta",
+      "width": 150
+    },
+    {
+      "id": "decide",
+      "lane": "coord",
+      "col": 3,
+      "type": "backend",
+      "label": "Decide",
+      "sublabel": "conflict › thread › CI",
+      "tag": "đọc caps mỗi report",
+      "width": 150
+    },
+    {
+      "id": "approver",
+      "lane": "coord",
+      "col": 4,
+      "type": "backend",
+      "label": "Settle approver",
+      "sublabel": "post /review, chờ verdict",
+      "width": 150
+    },
+    {
+      "id": "done",
+      "lane": "coord",
+      "col": 5,
+      "type": "frontend",
+      "label": "Merge-ready",
+      "sublabel": "agent không merge",
+      "width": 150
+    },
+    {
+      "id": "builder",
+      "lane": "agents",
+      "col": 2,
+      "type": "backend",
+      "label": "Builder",
+      "sublabel": "code · gates · evidence",
+      "tag": "poteto-agent",
+      "width": 150
+    },
+    {
+      "id": "watcher",
+      "lane": "agents",
+      "col": 3,
+      "type": "messagebus",
+      "label": "Watcher",
+      "sublabel": "watch-pr · đọc CI log",
+      "tag": "pstack-watch",
+      "width": 150
+    },
+    {
+      "id": "fixer",
+      "lane": "agents",
+      "col": 4,
+      "type": "backend",
+      "label": "Fixer",
+      "sublabel": "commit mới · resolve",
+      "tag": "pstack-code",
+      "width": 150
+    },
+    {
+      "id": "triager",
+      "lane": "agents",
+      "col": 5,
+      "type": "backend",
+      "label": "Triager",
+      "sublabel": "fix / dismiss thread",
+      "tag": "pstack-code",
+      "width": 150
+    },
+    {
+      "id": "github",
+      "lane": "github",
+      "col": 3,
+      "type": "cloud",
+      "label": "Pull request",
+      "sublabel": "CI · Copilot · approver bot",
+      "width": 150
+    },
+    {
+      "id": "blocked",
+      "lane": "github",
+      "col": 5,
+      "type": "security",
+      "label": "agent-blocked",
+      "sublabel": "comment gap rồi dừng",
+      "width": 150
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_goal",
+      "from": "human",
+      "to": "intake",
+      "label": "goal",
+      "variant": "security"
+    },
+    {
+      "id": "e_ready",
+      "from": "intake",
+      "to": "preflight",
+      "label": "ready",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_spawn",
+      "from": "preflight",
+      "to": "builder",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e_pr",
+      "from": "builder",
+      "to": "github",
+      "label": "PR + evidence",
+      "variant": "default"
+    },
+    {
+      "id": "e_arm",
+      "from": "builder",
+      "to": "watcher",
+      "label": "head",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_watch",
+      "from": "github",
+      "to": "watcher",
+      "label": "CI · review",
+      "variant": "dashed",
+      "role": "async"
+    },
+    {
+      "id": "e_verdict",
+      "from": "watcher",
+      "to": "decide",
+      "label": "verdict",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_threads",
+      "from": "decide",
+      "to": "triager",
+      "label": "threads / CI",
+      "variant": "default",
+      "role": "branch"
+    },
+    {
+      "id": "e_triage",
+      "from": "triager",
+      "to": "fixer",
+      "label": "quyết định",
+      "variant": "default"
+    },
+    {
+      "id": "e_rearm",
+      "from": "fixer",
+      "to": "watcher",
+      "label": "re-arm",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "id": "e_ready_pr",
+      "from": "decide",
+      "to": "approver",
+      "label": "READY",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_approved",
+      "from": "approver",
+      "to": "done",
+      "label": "APPROVED",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_cap",
+      "from": "decide",
+      "to": "blocked",
+      "label": "cap / blocker",
+      "variant": "security",
+      "role": "error"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Một human gate",
+      "items": [
+        "Human chỉ trả lời ở intake: ticket/goal phải ready",
+        "Sau intake không phase agent nào hỏi human"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Agentic loop",
+      "items": [
+        "Coordinator chỉ quyết định, không poll, không sửa code",
+        "Caps: 2 Copilot, 2 approver, 3 CI fix mỗi check"
+      ]
+    }
+  ]
+}
