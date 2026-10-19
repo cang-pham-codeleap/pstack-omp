@@ -47,6 +47,8 @@ One `task` item on `agent: "pstack-judgment"`. The synthesizer's quality check i
 
 Sanity-check the synthesizer's Accepted list. For any item that would be enforced more reliably by a lint rule, script, metadata flag, or runtime check, move it from Accepted to Backlog. See the **encode-lessons-in-structure** principle skill.
 
+Then run `node skill://lessons/scripts/lessons.mjs list --status strong`. Each `strong` lesson has held up across several sessions, so add it to the Accepted list routed to its structural form per the **lessons** skill's Promote section. Once that edit lands, retire the lesson with the commit as the reason.
+
 ### 5. Apply
 
 Before applying any Accepted edit, present the synthesizer's full Accepted/Rejected/Backlog output to the user and wait for explicit approval. The user picks which subset to apply and may redirect routings. Skill changes affect every future agent in the org. Do not auto-apply.
