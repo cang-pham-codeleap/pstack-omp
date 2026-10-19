@@ -1,6 +1,6 @@
 ---
 name: ticket-intake
-description: "Make a Jira ticket complete before any agent works on it. Use when starting a ticket, or when the user says intake, clarify the ticket, or the ticket is missing information. Brainstorms the target once, writes the answers back into the ticket so the ticket is the spec, and stamps it ready. The only step where the agent and the user discuss what to build."
+description: "Make a Jira ticket complete before any agent works on it. Use when starting a ticket, or when the user says intake, clarify the ticket, or the ticket is missing information. Grills the user in rounds over a design tree of every open decision and edge case, writes the answers back into the ticket so the ticket is the spec, and stamps it ready. The only step where the agent and the user discuss what to build."
 ---
 
 # Ticket intake
@@ -14,9 +14,9 @@ The skill ends when `node skill://ticket-intake/scripts/check-ticket-ready.mjs` 
 1. **Read.** Resolve the cloudId with `getAccessibleAtlassianResources`, then `getJiraIssue` with `fields: ["*all"]` and `responseContentFormat: "markdown"`. If the MCP is unavailable, ask the user to paste the ticket.
 2. **Check.** Pipe the markdown into the checker. Read the JSON.
 3. **Scout.** Dispatch one read-only exploration with `task` and `agent: "scout"`. Ask it to find the legacy implementation the ticket replaces, its stories or docs, consumers, registry or package dependencies, and similar tickets. Mark everything it fills as `(inferred, confirmed in D<n>)` until the user confirms it. In parallel, run `node skill://lessons/scripts/lessons.mjs match --kind intake-gap --ticket-type <type>`. It prints one line per gap past users flagged on this kind of ticket, or nothing. Each line becomes a question or a recommended default in step 5.
-4. **Brainstorm the target.** Confirm the goal, the user, success criteria, and non-goals. If the Problem or User Story reads two ways, propose 2 or 3 approaches with a recommendation and let the user pick. Skip this when the ticket is already unambiguous.
-5. **Ask once.** Send one message of numbered questions covering every remaining gap: template sections and the type-specific sections from the table. Each question has a recommended default. The user answers `ok` or `1A 2B`.
-   - Allow a second round only for questions caused directly by round-one answers that block scope or API. Everything else takes its default and is recorded as `source: default`.
+4. **Map the design tree.** List every open decision. Each decision branches into the decisions that depend on it. The root is the goal, the user, success criteria, and non-goals. If the Problem or User Story reads two ways, the root offers 2 or 3 approaches with a recommendation. Below the root sit the template sections, the type-specific sections from the table, and one edge-case branch per behavior in scope: empty, loading, and error states, invalid and boundary input, permissions, repeated or concurrent actions, responsive and accessibility behavior, and compatibility with current consumers. Drop a branch only when the scout shows it cannot happen. Facts are not decisions. Look up whatever the scout or the code can answer instead of asking.
+5. **Grill in rounds.** The frontier is every decision whose prerequisites are settled. Ask the whole frontier in one message of numbered questions, each with a recommended answer. The user answers `ok` to take every recommendation, or `1A 2B` to pick. A question that depends on another question still open in this round goes in a later round. A question that waits on the running scout waits, and the rest go now. Each answer reshapes the tree, so recompute the frontier and ask the next round. Stop when the frontier is empty and the user confirms your summary of the decisions.
+   - Record every answer, edge cases included, as a Decisions line. An answer the user typed is `source: user`. A recommendation taken with `ok` is `source: default`.
    - Never default the human-owned fields **Instance**, **Tester (internal)**, and **Stakeholder validation**. If one is blank, name its owner, leave the ticket not ready, and stop.
    - When the user corrects you (overturns a recommended default, says a section is missing or wrong, or adds a requirement you did not ask about), record it with `lessons.mjs add --kind intake-gap --ticket-type <type> --section <section>` per the **lessons** skill before writing back. Then vote on every step-3 lesson in one call, `lessons.mjs vote <id> up <id> down ...`: `up` when the user answered its question with real content, `down` when the user called it irrelevant.
 6. **Write back.** See [Writing back to Jira](#writing-back-to-jira).
@@ -71,3 +71,5 @@ If intake cannot finish (a human-owned field is blank, the MCP write is denied, 
 ## Handoff
 
 The next step reads the ticket only. A PR reviewer that cannot read Jira gets the ticket link and hash quoted in the PR description by whoever opens the PR.
+
+Steps 4 and 5 adapt the `grilling` skill from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT).
