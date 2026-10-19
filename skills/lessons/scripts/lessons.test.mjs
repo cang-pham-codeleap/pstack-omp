@@ -3,7 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { deriveStatus, globToRegExp, run } from './lessons.mjs';
+import { deriveStatus, globToRegExp, run, similarity } from './lessons.mjs';
 
 const script = join(import.meta.dir, 'lessons.mjs');
 let repo;
@@ -59,9 +59,9 @@ describe('add', () => {
     enable();
     const first = add('Check the migration order.');
     const second = add('  check THE migration   order ');
-    expect(second).toEqual({ id: first.id, deduped: true, status: 'candidate' });
-    expect(add('check the migration order!')).toEqual({ id: first.id, deduped: true, status: 'recurring' });
-    expect(lessons('list').lessons[0].helpful).toBe(2);
+    expect(second).toEqual({ id: first.id, deduped: true, status: 'candidate', similarity: 1 });
+    expect(add('check the migration order!')).toEqual({ id: first.id, deduped: true, status: 'recurring', similarity: 1 });
+    expect(lessons('list', '--json').lessons[0].helpful).toBe(2);
   });
 
   it('redacts secrets before storing', () => {
@@ -93,21 +93,22 @@ describe('status', () => {
   it('transitions through vote', () => {
     enable();
     const { id } = add('Vote me');
-    expect(lessons('vote', id, 'up')).toEqual({ id, status: 'candidate', helpful: 1, harmful: 0 });
-    expect(lessons('vote', id, 'up').status).toBe('recurring');
-    lessons('vote', id, 'up');
-    expect(lessons('vote', id, 'up').status).toBe('strong');
-    for (let i = 0; i < 4; i++) lessons('vote', id, 'down');
-    expect(lessons('vote', id, 'down')).toEqual({ id, status: 'retired', helpful: 4, harmful: 5 });
+    const vote = dir => lessons('vote', id, dir).votes[0];
+    expect(vote('up')).toEqual({ id, status: 'candidate', helpful: 1, harmful: 0 });
+    expect(vote('up').status).toBe('recurring');
+    vote('up');
+    expect(vote('up').status).toBe('strong');
+    for (let i = 0; i < 4; i++) vote('down');
+    expect(vote('down')).toEqual({ id, status: 'retired', helpful: 4, harmful: 5 });
   });
 
   it('keeps explicit retire sticky even after upvotes', () => {
     enable();
     const { id } = add('Retire me');
     expect(lessons('retire', id, '--reason', 'obsolete')).toEqual({ id, status: 'retired' });
-    expect(lessons('vote', id, 'up')).toEqual({ id, status: 'retired', helpful: 1, harmful: 0 });
-    expect(lessons('list').lessons).toEqual([]);
-    expect(lessons('list', '--status', 'retired').lessons[0].retiredReason).toBe('obsolete');
+    expect(lessons('vote', id, 'up')).toEqual({ votes: [{ id, status: 'retired', helpful: 1, harmful: 0 }] });
+    expect(lessons('list', '--json').lessons).toEqual([]);
+    expect(lessons('list', '--json', '--status', 'retired').lessons[0].retiredReason).toBe('obsolete');
   });
 
   it('errors on unknown id', () => {
@@ -118,7 +119,7 @@ describe('status', () => {
 
 describe('match', () => {
   it('returns disabled shape when off', () => {
-    expect(lessons('match', '--kind', 'root-cause')).toEqual({ enabled: false, lessons: [] });
+    expect(lessons('match', '--json', '--kind', 'root-cause')).toEqual({ enabled: false, lessons: [] });
   });
 
   it('filters by path glob, ticket type and passes general entries; sorts by status then score', () => {
@@ -133,20 +134,21 @@ describe('match', () => {
     lessons('vote', general.id, 'up');
 
     const ids = res => res.lessons.map(l => l.id);
-    const forApi = lessons('match', '--kind', 'root-cause', '--paths', 'src/api/v1/user.ts', '--ticket-type', 'feature');
+    const m = (...args) => lessons('match', '--json', '--kind', 'root-cause', ...args);
+    const forApi = m('--paths', 'src/api/v1/user.ts', '--ticket-type', 'feature');
     // second = recurring(2), general = candidate(1), api = candidate(0); bug excluded by ticketType, ui by path
     expect(ids(forApi)).toEqual([second.id, general.id, api.id]);
-    expect(ids(lessons('match', '--kind', 'root-cause', '--paths', 'src/api/v1/user.ts', '--ticket-type', 'bug'))).toEqual([second.id, general.id, api.id, bug.id]);
-    expect(ids(lessons('match', '--kind', 'root-cause', '--paths', 'src/ui/Button.tsx'))).toEqual([second.id, general.id, ui.id]);
-    expect(ids(lessons('match', '--kind', 'root-cause', '--limit', '1'))).toEqual([second.id]);
-    expect(lessons('match', '--kind', 'intake-gap').lessons).toEqual([]);
+    expect(ids(m('--paths', 'src/api/v1/user.ts', '--ticket-type', 'bug'))).toEqual([second.id, general.id, api.id, bug.id]);
+    expect(ids(m('--paths', 'src/ui/Button.tsx'))).toEqual([second.id, general.id, ui.id]);
+    expect(ids(m('--limit', '1'))).toEqual([second.id]);
+    expect(lessons('match', '--json', '--kind', 'intake-gap').lessons).toEqual([]);
   });
 
   it('matches tags case-insensitively and excludes section mismatches', () => {
     enable();
     const tagged = add('Tagged', '--tags', 'React,Hooks');
     add('Other section', '--section', 'Scope');
-    const res = lessons('match', '--kind', 'root-cause', '--tags', 'hooks', '--section', 'API contract');
+    const res = lessons('match', '--json', '--kind', 'root-cause', '--tags', 'hooks', '--section', 'API contract');
     expect(res.lessons.map(l => l.id)).toEqual([tagged.id]);
   });
 
@@ -156,8 +158,117 @@ describe('match', () => {
     mkdirSync(join(repo, 'src', 'api'), { recursive: true });
     writeFileSync(join(repo, 'src', 'api', 'user.ts'), '');
     symlinkSync(repo, join(home, 'link'));
-    const res = lessons('match', '--kind', 'root-cause', '--paths', join(home, 'link', 'src', 'api', 'user.ts'));
+    const res = lessons('match', '--json', '--kind', 'root-cause', '--paths', join(home, 'link', 'src', 'api', 'user.ts'));
     expect(res.lessons.map(l => l.id)).toEqual([api.id]);
+  });
+});
+
+describe('text output', () => {
+  const spawn = (...args) => spawnSync('node', [script, ...args, '--cwd', repo], { env: { ...process.env, PSTACK_HOME: home }, encoding: 'utf8' });
+  const A = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta', 'iota', 'kappa'];
+  const B = ['red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'violet', 'black', 'white', 'grey'];
+  // Ten similar-but-distinct lessons (pairwise Jaccard well under 0.7) so none are merged.
+  const addTen = () => A.map((a, i) => add(`Verify ${a} handler retries before enabling ${B[i]} flag`).id);
+
+  it('prints one compact line per lesson and omits unset parts', () => {
+    enable();
+    const full = add('Check order', '--ticket-type', 'bug', '--section', 'Scope', '--prevent', 'Run in order').id;
+    const typeOnly = add('Second lesson here', '--ticket-type', 'bug').id;
+    const bare = add('Third lesson here').id;
+    expect(lessons('list')).toBe([
+      `${full} candidate +0/-0 [bug/Scope] Check order | prevent: Run in order`,
+      `${typeOnly} candidate +0/-0 [bug] Second lesson here`,
+      `${bare} candidate +0/-0 Third lesson here`,
+    ].join('\n'));
+    expect(lessons('match')).toBe(lessons('list'));
+    expect(lessons('list', '--json').lessons).toHaveLength(3);
+    expect(lessons('match', '--json')).toMatchObject({ enabled: true });
+  });
+
+  it('prints nothing for no hits or when disabled', () => {
+    let res = spawn('match');
+    expect(res.status).toBe(0);
+    expect(res.stdout).toBe('');
+    enable();
+    res = spawn('match');
+    expect(res.status).toBe(0);
+    expect(res.stdout).toBe('');
+    expect(spawn('list').stdout).toBe('');
+    add('Something');
+    expect(spawn('match').stdout.endsWith('\n')).toBe(true);
+  });
+
+  it('caps at --limit (default 5) and reports the remainder', () => {
+    enable();
+    const ids = addTen();
+    const lines = lessons('match').split('\n');
+    expect(lines).toHaveLength(6);
+    expect(lines.slice(0, 5).map(l => l.split(' ')[0])).toEqual(ids.slice(0, 5));
+    expect(lines[5]).toBe('... 5 more (raise --limit or --max-chars)');
+    expect(lessons('match', '--limit', '10').split('\n')).toHaveLength(10);
+    expect(lessons('match', '--limit', '2').split('\n').at(-1)).toBe('... 8 more (raise --limit or --max-chars)');
+    expect(lessons('match', '--json', '--max-chars', '1').lessons).toHaveLength(5);
+  });
+
+  it('keeps lines within --max-chars but always prints the first', () => {
+    enable();
+    addTen();
+    const all = lessons('match', '--limit', '10').split('\n');
+    const two = all[0].length + 1 + all[1].length;
+    expect(lessons('match', '--limit', '10', '--max-chars', String(two))).toBe(`${all[0]}\n${all[1]}\n... 8 more (raise --limit or --max-chars)`);
+    expect(lessons('match', '--limit', '10', '--max-chars', String(two - 1))).toBe(`${all[0]}\n... 9 more (raise --limit or --max-chars)`);
+    expect(lessons('match', '--max-chars', '1')).toBe(`${all[0]}\n... 9 more (raise --limit or --max-chars)`);
+  });
+
+  it('prints help under 25 lines', () => {
+    const help = lessons('help');
+    expect(help.split('\n').length).toBeLessThanOrEqual(25);
+    for (const word of ['configure', 'match', 'vote', 'retire', 'root-cause', '--max-chars']) expect(help).toContain(word);
+  });
+});
+
+describe('near-duplicate merge', () => {
+  it('merges at Jaccard >= 0.7 and reports similarity', () => {
+    enable();
+    const first = add('Always run the migration before seeding data');
+    expect(similarity('Always run the migration before seeding data', 'Always run the migration before seeding test data')).toBe(0.875);
+    expect(add('Always run the migration before seeding test data')).toEqual({ id: first.id, deduped: true, status: 'candidate', similarity: 0.88 });
+    expect(lessons('list', '--json').lessons).toHaveLength(1);
+  });
+
+  it('does not merge dissimilar lessons or lessons under 4 words', () => {
+    enable();
+    const a = add('Always run the migration before seeding data');
+    expect(add('Always run the linter before opening pull requests').deduped).toBeUndefined();
+    const short = add('Run migrations first');
+    expect(add('Run migrations first now').deduped).toBeUndefined();
+    expect(add('Run migrations first').id).toBe(short.id); // exact match still dedups
+    expect(lessons('list', '--json').lessons.map(l => l.id)).toContain(a.id);
+    expect(lessons('list', '--json').lessons).toHaveLength(4);
+  });
+});
+
+describe('batch vote', () => {
+  it('votes several lessons in one call', () => {
+    enable();
+    const a = add('First lesson to vote on').id;
+    const b = add('Entirely different words appear here').id;
+    expect(lessons('vote', a, 'up', b, 'down', a, 'up')).toEqual({
+      votes: [
+        { id: a, status: 'candidate', helpful: 1, harmful: 0 },
+        { id: b, status: 'retired', helpful: 0, harmful: 1 },
+        { id: a, status: 'recurring', helpful: 2, harmful: 0 },
+      ],
+    });
+  });
+
+  it('writes nothing when any pair is invalid', () => {
+    enable();
+    const a = add('First lesson to vote on').id;
+    expect(() => lessons('vote', a, 'up', 'rc-00000000', 'up')).toThrow('unknown lesson id: rc-00000000');
+    expect(() => lessons('vote', a, 'up', a, 'sideways')).toThrow('vote direction must be up or down');
+    expect(() => lessons('vote', a, 'up', a)).toThrow('usage: vote');
+    expect(lessons('list', '--json').lessons[0]).toMatchObject({ helpful: 0, harmful: 0 });
   });
 });
 

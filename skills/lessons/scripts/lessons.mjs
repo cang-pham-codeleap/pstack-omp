@@ -31,6 +31,16 @@ export function normalizeLesson(text) {
   return text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
 }
 
+const wordSet = text => new Set(text.split(' ').filter(Boolean));
+const DUP_THRESHOLD = 0.7;
+
+// Jaccard similarity of the normalized word sets; 0 when both are empty.
+export function similarity(a, b) {
+  const [x, y] = [wordSet(normalizeLesson(a)), wordSet(normalizeLesson(b))];
+  const shared = [...x].filter(w => y.has(w)).length;
+  return x.size + y.size - shared ? shared / (x.size + y.size - shared) : 0;
+}
+
 export function deriveStatus(entry) {
   if (entry.retiredReason || entry.harmful > entry.helpful) return 'retired';
   if (entry.helpful >= 4) return 'strong';
@@ -59,7 +69,8 @@ function parseArgs(argv) {
   const flags = {};
   const positional = [];
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i].startsWith('--')) {
+    if (argv[i] === '--json') flags.json = true;
+    else if (argv[i].startsWith('--')) {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith('--')) fail(`missing value for ${argv[i]}`);
       flags[argv[i].slice(2)] = value;
@@ -163,6 +174,12 @@ function touch(entry) {
   entry.status = deriveStatus(entry);
 }
 
+const formatLine = ({ id, status, helpful, harmful, match: m = {}, lesson, prevent }) => {
+  const tag = [m.ticketType, m.section].filter(Boolean).join('/');
+  const flat = text => text.replace(/\s+/g, ' ');
+  return `${id} ${status} +${helpful}/-${harmful}${tag ? ` [${tag}]` : ''} ${flat(lesson)}${prevent ? ` | prevent: ${flat(prevent)}` : ''}`;
+};
+
 const commands = {
   configure({ flags, ctx }) {
     if (!['project', 'global'].includes(flags.where)) fail('--where must be project or global');
@@ -195,13 +212,20 @@ const commands = {
 
     const stores = loadStores(ctx);
     const key = normalizeLesson(lesson);
+    let best = null;
     for (const store of stores) {
-      const hit = store.entries.find(e => e.kind === flags.kind && e.status !== 'retired' && normalizeLesson(e.lesson) === key);
-      if (!hit) continue;
-      hit.helpful += 1;
-      touch(hit);
-      writeStore(store.file, store.entries);
-      return { id: hit.id, deduped: true, status: hit.status };
+      for (const e of store.entries) {
+        if (e.kind !== flags.kind || e.status === 'retired') continue;
+        const other = normalizeLesson(e.lesson);
+        const sim = other === key ? 1 : wordSet(other).size >= 4 && wordSet(key).size >= 4 ? similarity(key, other) : 0;
+        if (sim >= DUP_THRESHOLD && (!best || sim > best.sim)) best = { store, hit: e, sim };
+      }
+    }
+    if (best) {
+      best.hit.helpful += 1;
+      touch(best.hit);
+      writeStore(best.store.file, best.store.entries);
+      return { id: best.hit.id, deduped: true, status: best.hit.status, similarity: Math.round(best.sim * 100) / 100 };
     }
 
     const match = {};
@@ -223,11 +247,11 @@ const commands = {
   },
 
   match({ flags, ctx, cfg }) {
-    if (!cfg.enabled) return { enabled: false, lessons: [] };
+    if (!cfg.enabled) return flags.json ? { enabled: false, lessons: [] } : '';
     const real = p => { try { return realpathSync(p); } catch { return p; } };
     const paths = list(flags.paths).map(p => (isAbsolute(p) ? relative(ctx.root, real(p)) : p));
     const tags = list(flags.tags).map(t => t.toLowerCase());
-    const limit = flags.limit === undefined ? 10 : Number(flags.limit);
+    const limit = flags.limit === undefined ? 5 : Number(flags.limit);
     if (!Number.isInteger(limit) || limit < 0) fail('--limit must be a non-negative integer');
 
     const keep = ({ match: m = {}, status, kind }) => {
@@ -245,16 +269,37 @@ const commands = {
       RANK[b.status] - RANK[a.status]
       || (b.helpful - b.harmful) - (a.helpful - a.harmful)
       || b.updated.localeCompare(a.updated));
-    return { enabled: true, lessons: lessons.slice(0, limit) };
+    if (flags.json) return { enabled: true, lessons: lessons.slice(0, limit) };
+    const max = flags['max-chars'] === undefined ? 1500 : Number(flags['max-chars']);
+    if (!Number.isInteger(max) || max < 1) fail('--max-chars must be a positive integer');
+    const out = [];
+    let len = 0;
+    for (const line of lessons.slice(0, limit).map(formatLine)) {
+      const next = len + (out.length ? 1 : 0) + line.length;
+      if (out.length && next > max) break;
+      out.push(line);
+      len = next;
+    }
+    if (out.length < lessons.length) out.push(`... ${lessons.length - out.length} more (raise --limit or --max-chars)`);
+    return out.join('\n');
   },
 
-  vote({ positional: [id, dir], ctx }) {
-    if (!['up', 'down'].includes(dir)) fail('usage: vote <id> up|down');
-    const { store, entry } = findEntry(loadStores(ctx), id);
-    entry[dir === 'up' ? 'helpful' : 'harmful'] += 1;
-    touch(entry);
-    writeStore(store.file, store.entries);
-    return { id, status: entry.status, helpful: entry.helpful, harmful: entry.harmful };
+  vote({ positional, ctx }) {
+    if (!positional.length || positional.length % 2) fail('usage: vote <id> up|down [<id> up|down ...]');
+    const stores = loadStores(ctx);
+    const pairs = [];
+    for (let i = 0; i < positional.length; i += 2) {
+      const dir = positional[i + 1];
+      if (!['up', 'down'].includes(dir)) fail(`vote direction must be up or down, got: ${dir}`);
+      pairs.push({ ...findEntry(stores, positional[i]), dir });
+    }
+    const votes = pairs.map(({ entry, dir }) => {
+      entry[dir === 'up' ? 'helpful' : 'harmful'] += 1;
+      touch(entry);
+      return { id: entry.id, status: entry.status, helpful: entry.helpful, harmful: entry.harmful };
+    });
+    for (const store of new Set(pairs.map(p => p.store))) writeStore(store.file, store.entries);
+    return { votes };
   },
 
   retire({ positional: [id], flags, ctx }) {
@@ -268,9 +313,28 @@ const commands = {
   },
 
   list({ flags, ctx }) {
-    const entries = loadStores(ctx).flatMap(s => s.entries).filter(e =>
+    const lessons = loadStores(ctx).flatMap(s => s.entries).filter(e =>
       (flags.status ? e.status === flags.status : e.status !== 'retired') && (!flags.kind || e.kind === flags.kind));
-    return { lessons: entries };
+    return flags.json ? { lessons } : lessons.map(formatLine).join('\n');
+  },
+
+  help() {
+    return [
+      'lessons.mjs <command> [flags]   (all commands accept --cwd DIR; output is JSON except match/list/help)',
+      '  configure --where project|global --enabled true|false [--project-store remote|local]',
+      '  config',
+      '  add --kind K --lesson TEXT --evidence TEXT [--prevent TEXT] [--scope project|global]',
+      '      [--paths a,b] [--tags a,b] [--ticket-type T] [--section S]   (near-duplicates merge and upvote)',
+      '  match [--kind K] [--paths a,b] [--tags a,b] [--ticket-type T] [--section S]',
+      '        [--limit 5] [--max-chars 1500] [--json]   (text; empty output = nothing to apply)',
+      '  list [--status S] [--kind K] [--json]',
+      '  vote <id> up|down [<id> up|down ...]   (all pairs validated before any write)',
+      '  retire <id> --reason TEXT',
+      '  help',
+      'Kinds: root-cause (rc), intake-gap (ig), preference (pf).',
+      'Text line: <id> <status> +<helpful>/-<harmful> [<ticketType>/<section>] <lesson> | prevent: <prevent>',
+      '  [...] and "| prevent" are omitted when unset; match ends with "... N more (raise --limit or --max-chars)" if truncated.',
+    ].join('\n');
   },
 };
 
@@ -284,7 +348,8 @@ export function run(argv, env = process.env) {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   try {
-    process.stdout.write(`${JSON.stringify(run(process.argv.slice(2)))}\n`);
+    const out = run(process.argv.slice(2));
+    process.stdout.write(typeof out === 'string' ? (out && `${out}\n`) : `${JSON.stringify(out)}\n`);
   } catch (err) {
     process.stderr.write(`${JSON.stringify({ error: err.message })}\n`);
     process.exit(1);

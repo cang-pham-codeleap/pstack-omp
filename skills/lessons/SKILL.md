@@ -34,7 +34,7 @@ node skill://lessons/scripts/lessons.mjs <command> [flags]
 
 ## Read
 
-Run `match` at the step that would use the lesson, and paste the result into your working notes with each `id`.
+Run `match` at the step that would use the lesson. It prints one line per lesson, strongest first, at most 5 lines and 1500 characters: `<id> <status> +<up>/-<down> [<type>/<section>] <lesson> | prevent: <check>`. Empty output means memory is off or nothing matched, so move on without comment. Keep the ids you used for the vote.
 
 - Before forming bug hypotheses: `match --kind root-cause --paths <files in the failing path> --tags <area>`.
 - Before the intake question round: `match --kind intake-gap --ticket-type <type>`. Each hit becomes a question or a recommended default in that round.
@@ -64,16 +64,16 @@ lessons.mjs add --kind intake-gap --ticket-type bug --section "Test process" \
   --evidence "CP-3801 intake round 1, user correction"
 ```
 
-An identical lesson is not duplicated. The script upvotes the existing entry instead.
+An identical or near-identical lesson (word overlap of 70% or more) is not duplicated. The script upvotes the existing entry instead, so do not search the store yourself before adding.
 
 Subagents do not write. A Builder, Fixer, Triager, or explorer returns candidate lessons in its report, and the coordinator runs `add`.
 
 ## Vote
 
-When a lesson you matched decided something, close the loop in the same session.
+When a lesson you matched decided something, close the loop in the same session with one call for all of them: `vote <id> up <id> down ...`.
 
-- It held (the warned-about class was the cause, the question exposed a real gap): `vote <id> up`.
-- It misled you, or the user called it irrelevant or wrong: `vote <id> down`.
+- `up` when it held: the warned-about class was the cause, or the question exposed a real gap.
+- `down` when it misled you, or the user called it irrelevant or wrong.
 
 Status follows the counters. Two upvotes make a lesson `recurring`, four make it `strong`. A lesson with more downvotes than upvotes is `retired` and no longer matches. `retire <id> --reason "<why>"` retires one by hand, for example when the code it describes is gone.
 
@@ -89,14 +89,15 @@ Once the mechanism lands, retire the lesson with the commit as the reason.
 
 ## Commands
 
-| Command | Result |
-|---|---|
-| `config` | Whether memory is on, the project store, and every store path |
-| `configure --where project\|global --enabled true\|false [--project-store remote\|local]` | Writes the config. `setup-pstack` calls this |
-| `add --kind K --lesson T --evidence T [--prevent T] [--paths a,b] [--tags x,y] [--ticket-type T] [--section S] [--scope project\|global]` | Appends, or upvotes an identical lesson |
-| `match --kind K [filters] [--limit N]` | Matching active lessons, strongest first |
-| `vote <id> up\|down` | Updates counters and status |
-| `retire <id> --reason T` | Retires for good |
-| `list [--status S] [--kind K]` | Everything, for review |
+`lessons.mjs help` prints every command and flag. Read it instead of guessing a flag. `--json` on `match` and `list` returns full entries when you need the evidence field.
+
+## Token budget
+
+The script does the bookkeeping so the model does not. Keep it that way.
+
+- Never read or `cat` a lessons file. Use `match` or `list`, which cap their output.
+- Never compare lessons for duplicates yourself. `add` does it.
+- Batch every vote of a session into one `vote` call at the end of the step.
+- Read this file only when you are about to write a lesson. A playbook line that runs `match` carries everything the read needs.
 
 In `remote` mode, show the user the `.pstack/lessons.jsonl` diff before staging it. A committed lesson is read by everyone on the repo.
