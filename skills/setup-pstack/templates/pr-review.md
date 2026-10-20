@@ -189,9 +189,8 @@ safe-outputs:
   submit-pull-request-review:
     max: 1
     target: ${{ needs.capture_review_target.outputs.pr_number }}
-    allowed-events: [APPROVE, REQUEST_CHANGES]
+    allowed-events: [APPROVE, REQUEST_CHANGES, COMMENT]
     commit-id: ${{ needs.capture_review_target.outputs.head_sha }}
-    supersede-older-reviews: true
   add-comment:
     max: 1
     target: ${{ needs.capture_review_target.outputs.pr_number }}
@@ -223,10 +222,11 @@ safe-outputs:
           const memoryItems = items.filter(item => item?.type === 'comment_memory');
           const reviewBody = reviews.length === 1 ? reviews[0].body : '';
           const commentBody = comments.length === 1 ? comments[0].body : '';
-          if (!output.errors?.length && reviews.length === 0 && comments.length === 1 &&
-              items.length === 1 + memoryItems.length && commentBody.length <= 1200 &&
-              /^VERDICT: DEFERRED\r?\nSummary: \S/.test(commentBody)) {
-            core.info('Verdict deferred; publishing the comment only.');
+          if (!output.errors?.length && reviews.length === 1 && comments.length === 0 &&
+              items.length === 1 + memoryItems.length && reviews[0].event === 'COMMENT' &&
+              typeof reviewBody === 'string' && reviewBody.length <= 1200 &&
+              /^VERDICT: DEFERRED\r?\nSummary: \S/.test(reviewBody)) {
+            core.info('Verdict deferred; publishing a COMMENT review only.');
             return;
           }
           if (output.errors?.length || reviews.length !== 1 || comments.length !== 1 ||
@@ -360,8 +360,9 @@ partial results. Never claim that either output succeeded unless the safe
 output operation confirms it.
 
 When the verdict is deferred (pending or unavailable validation evidence),
-skip `submit_pull_request_review` and publish only one `safeoutputs add_comment`
-in this shape, naming the pending run/check links or the unavailable source:
+submit exactly one `safeoutputs submit_pull_request_review` with event `COMMENT`
+and skip `add_comment`. The review body has this shape, naming the pending
+run/check links or the unavailable source:
 
 VERDICT: DEFERRED
 Summary: <what evidence is pending or unavailable and when to re-run /__COMMAND__>

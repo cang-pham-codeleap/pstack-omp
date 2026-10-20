@@ -70,3 +70,53 @@ describe('detect', () => {
     expect(state.installed).toEqual({ engine: 'claude', command: 'review', model: null });
   });
 });
+
+const HEAD = 'a'.repeat(40);
+const BASE = 'b'.repeat(40);
+
+// Runs the safe-outputs publication gate from the rendered workflow against one agent output.
+async function gate(items) {
+  const text = render({})['pr-review.md'];
+  const block = text.slice(text.indexOf('id: verify_review_target'));
+  const script = block.slice(block.indexOf('script: |\n') + 10, block.indexOf('\n---\n')).replace(/^ {10}/gm, '');
+  const dir = mkdtempSync(join(tmpdir(), 'pr-review-gate-'));
+  const outputPath = join(dir, 'output.json');
+  writeFileSync(outputPath, JSON.stringify({ items }));
+  const repo = { id: 1 };
+  const live = { state: 'open', head: { sha: HEAD, repo }, base: { sha: BASE, repo } };
+  const logs = [];
+  const run = new (Object.getPrototypeOf(async () => {}).constructor)('github', 'context', 'core', 'require', 'process', script);
+  await run(
+    { rest: { pulls: { get: async () => ({ data: live }) } } },
+    { repo: { owner: 'acme', repo: 'app' }, payload: { repository: repo } },
+    { info: m => logs.push(m) },
+    (await import('node:module')).createRequire(import.meta.url),
+    { env: { GH_AW_AGENT_OUTPUT: outputPath, EXPECTED_PR_NUMBER: '7', EXPECTED_HEAD_SHA: HEAD, EXPECTED_BASE_SHA: BASE } },
+  );
+  return logs;
+}
+
+const review = (event, body) => ({ type: 'submit_pull_request_review', event, body });
+const comment = body => ({ type: 'add_comment', body });
+const deferred = 'VERDICT: DEFERRED\nSummary: CI run 42 is still in progress; re-run /review when it finishes.';
+
+describe('publication gate', () => {
+  it('publishes a deferred verdict as one COMMENT review, which ship-to-green reads as DEFERRED', async () => {
+    expect(await gate([review('COMMENT', deferred)])).toEqual(['Verdict deferred; publishing a COMMENT review only.']);
+  });
+
+  it('refuses a deferred verdict sent as a comment or with an approving event', async () => {
+    await expect(gate([comment(deferred)])).rejects.toThrow('Expected exactly one formal review');
+    await expect(gate([review('APPROVE', deferred)])).rejects.toThrow('Expected exactly one formal review');
+  });
+
+  it('refuses a COMMENT review that carries a real verdict', async () => {
+    const body = `VERDICT: APPROVE\nReviewed commit: ${HEAD}\nReviewed base: ${BASE}\nSummary: fine.`;
+    await expect(gate([review('COMMENT', body), comment('VERDICT: APPROVE\nSummary: fine.')])).rejects.toThrow('same valid verdict');
+  });
+
+  it('passes a matching approval bound to the captured head and base', async () => {
+    const body = `VERDICT: APPROVE\nReviewed commit: ${HEAD}\nReviewed base: ${BASE}\nSummary: fine.`;
+    expect(await gate([review('APPROVE', body), comment('VERDICT: APPROVE\nSummary: fine.')])).toEqual([]);
+  });
+});
