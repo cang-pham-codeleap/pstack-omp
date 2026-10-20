@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 A small, typed store of lessons the agent learned in earlier sessions. The script owns every write. Never edit a lessons file by hand, and never ask a model to rewrite one.
 
-The user decides at setup whether memory is on and whether project lessons are committed. Step 8 of `skill://setup-pstack` writes that choice. Every command below is a safe no-op when memory is off, so a playbook can call it unconditionally.
+The user decides at setup whether memory is on and whether project lessons are committed. `skill://setup-pstack` asks it in step 3(c), next to scope and budget, and writes it in step 5. Every command below is a safe no-op when memory is off, so a playbook can call it unconditionally.
 
 ```sh
 node skill://lessons/scripts/lessons.mjs <command> [flags]
