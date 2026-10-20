@@ -1,6 +1,6 @@
 ---
 name: setup-pstack
-description: Configure which models pstack's role agents use and at what reasoning budget, and whether agents keep a lesson memory across sessions. Detects the models this machine can actually spawn and writes the pstack-* entries into the project's .omp/config.yml or the global ~/.omp/agent/config.yml, whichever the user picks. Use for /setup-pstack, "configure pstack models", "pstack budget", changing pstack's model choices, or turning pstack memory on or off.
+description: Configure which models pstack's role agents use and at what reasoning budget, whether agents keep a lesson memory across sessions, and whether this GitHub repo gets a /review workflow that reviews and approves PRs. Detects the models this machine can actually spawn and writes the pstack-* entries into the project's .omp/config.yml or the global ~/.omp/agent/config.yml, whichever the user picks. Use for /setup-pstack, "configure pstack models", "pstack budget", changing pstack's model choices, turning pstack memory on or off, or adding automated PR review and approval.
 ---
 
 # Setup pstack
@@ -143,3 +143,28 @@ A project config overrides the global one, so `off` here wins inside this repo e
 **(c) omp's own memory (omp only).** When (a) is on, offer once to also turn on omp's built-in session memory, which learns untyped facts from past sessions in the background. Tell the user what it costs before they answer. At session start it sends each finished session to the `default` model role (up to 4000 input tokens each, at most 64 sessions per startup) and consolidates with the `smol` role, and it injects up to 5000 tokens of summary into every system prompt, subagents included. pstack lessons cost nothing until a playbook step runs `match`. On yes, set `memory.backend: local` and `autolearn.enabled: true` in the file step 3(a) chose, leaving every other key as step 5 describes. On no, write nothing. pstack lessons work either way.
 
 Confirm by running `config` again and showing the user what it reports.
+
+### 9. Automated PR review (GitHub only)
+
+Run `node skill://setup-pstack/scripts/pr-review.mjs detect`. When it reports `github: false`, skip this step without mentioning it.
+
+**(a) Ask.** Before asking, say what it installs. A collaborator or the PR author comments `/review` on a pull request. A GitHub Agentic Workflow (`gh aw`) reviews the diff and CI results read-only, then submits `APPROVE` or `REQUEST_CHANGES` as `github-actions[bot]` with a short verdict comment. Approval adds `ready-for-merge` and undrafts the PR. A failed run posts a comment asking for a new `/review`. Name the risk too. The bot's approval counts toward required reviews, so anyone who can push a branch to this repo can get their own PR approved.
+
+Prefer `ask`. Offer these options with these exact labels. Default to the engine `detect` reports under `installed`, or to `no` when nothing is installed.
+
+- `yes — Copilot engine` (no secret: it bills the repo's Copilot plan through the workflow token)
+- `yes — Claude engine` (needs an `ANTHROPIC_API_KEY` repo secret)
+- `no`
+
+An answer may also name a model or a trigger word, for example "copilot, gpt-5.6-luna, /ai-review". Pass those as `--model` and `--command`. Without them the engine's default model and `/review` apply.
+
+When `detect` lists `conflicts`, another workflow already answers that trigger. Name the files and recommend `no` or a different `--command`. Two reviewers on one trigger approve twice.
+
+**(b) Install.** Run `node skill://setup-pstack/scripts/pr-review.mjs install --engine <copilot|claude> [--model <id>] [--command <word>]`. It installs the `gh aw` extension when missing, writes `.github/workflows/pr-review.md` and `pr-review-status.yml`, compiles the lock file, and turns on the repo setting that lets GitHub Actions approve pull requests. Re-running rewrites the same files, so it also changes the engine, model, or trigger. Then report what it returned:
+
+- `canApproveError` means an organization policy blocks Actions from approving. An org owner must allow it under the org's Settings → Actions → General. Until then the review runs but cannot approve.
+- `missingSecrets` lists groups of alternatives, and one secret per group is enough. Tell the user to run `gh aw secrets bootstrap` or `gh secret set <NAME>` in their own terminal. Never ask for a secret value or pass one through the chat.
+
+**(c) Land it.** The workflow fires only from the default branch. Commit the returned `files` on a new branch and open a ready PR. Tell the user the review reads `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `.github/copilot-instructions.md`, and `.github/instructions/*.instructions.md` when present. Repo-specific review rules go in `.github/review-rules.md`, which needs no recompile.
+
+`no` writes nothing. If the workflow is already installed, leave it and name the removal: `gh aw remove pr-review`, then delete `.github/workflows/pr-review-status.yml`.

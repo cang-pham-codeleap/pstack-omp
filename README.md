@@ -30,13 +30,13 @@ discovery happens at session start, so start a new session after installing or r
 /plugin install pstack@pstack-omp
 ```
 
-skills run as `/pstack:<name>` (e.g. `/pstack:poteto-mode`). a session-start hook teaches claude code how to read the omp-flavored skills; role models are fixed in [`claude/agents/`](./claude/agents/), so `/pstack:setup-pstack` only asks its lesson-memory questions there. details: [omp and Claude Code](./docs/guide/11-omp-and-claude-code.md).
+skills run as `/pstack:<name>` (e.g. `/pstack:poteto-mode`). a session-start hook teaches claude code how to read the omp-flavored skills; role models are fixed in [`claude/agents/`](./claude/agents/), so `/pstack:setup-pstack` only asks its lesson-memory and PR-review questions there. details: [omp and Claude Code](./docs/guide/11-omp-and-claude-code.md).
 
 ## get started
 
 two steps:
 
-1. run [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md), pick a reasoning budget, choose which models you want, and decide whether agents keep lessons across sessions, locally or committed with the repo.
+1. run [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md), pick a reasoning budget, choose which models you want, decide whether agents keep lessons across sessions, locally or committed with the repo, and on a GitHub repo whether a `/review` comment gets an agent to review and approve the PR.
 2. use [`/skill:poteto-mode`](./skills/poteto-mode/SKILL.md) whenever you're doing anything that requires rigor.
 
 new here? the [pstack guide](./docs/guide/README.md) walks you through a first real task, from setup and prompting through verification and overnight runs.
@@ -134,7 +134,7 @@ the full rules and playbooks live in [`skills/poteto-mode/SKILL.md`](./skills/po
 | [`/skill:swarm`](./skills/swarm/SKILL.md) | you want N parallel workers across different slices or races, then one aggregated report. |
 | [`/skill:interrogate`](./skills/interrogate/SKILL.md) | you have a diff and want several different models to try to break it, including a strict code-quality lens. |
 | [`/skill:automate-me`](./skills/automate-me/SKILL.md) | you want your own `-mode` skill, drafted from how you've actually worked. |
-| [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md) | you want to pick which models pstack uses per role. probes what this machine can spawn and merges the eight `pstack-code`, `pstack-judgment`, `pstack-tooling`, `pstack-panel-1..4`, and `pstack-watch` entries into `~/.omp/agent/config.yml`'s `modelRoles` and `task.agentModelOverrides`, leaving every other key untouched. |
+| [`/skill:setup-pstack`](./skills/setup-pstack/SKILL.md) | you want to pick which models pstack uses per role. probes what this machine can spawn and merges the eight `pstack-code`, `pstack-judgment`, `pstack-tooling`, `pstack-panel-1..4`, and `pstack-watch` entries into `~/.omp/agent/config.yml`'s `modelRoles` and `task.agentModelOverrides`, leaving every other key untouched. on a GitHub repo it offers a `/review` workflow that reviews and approves PRs. |
 | [`/skill:reflect`](./skills/reflect/SKILL.md) | a long task landed and you want the recipe captured as a skill edit. |
 | [`/skill:lessons`](./skills/lessons/SKILL.md) | you want to see, vote on, or retire what agents learned across sessions: verified bug root causes and the gaps users corrected during ticket intake. off until `setup-pstack` step 8 turns it on, and you choose whether project lessons stay local or get committed. |
 | [`/skill:teach`](./skills/teach/SKILL.md) | you want to actually understand a change or subsystem, not just have it summarized. runs how + why and weaves one plain explanation, built up diagram by diagram. |
