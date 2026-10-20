@@ -29,7 +29,7 @@ The role list and their intents are in step 5. Check the project's `.omp/config.
 
 ### 3. Scope, budget, memory, review, map, and confirm
 
-Ask (a), (b), (c), (d), and (e) together in one `ask` call, as one batch, so the user sees every setup choice at once. Leave out (e) only when step 2's `detect` reported `github: false`, and then say nothing about it. Never move a question to the end of the run or leave another one out.
+Ask (a), (b), (c), (d), and (e) together in one `ask` call, as one batch, so the user sees every setup choice at once. Leave out (d) unless the harness is omp, and leave out (e) only when step 2's `detect` reported `github: false`; say nothing about a question you left out. The harness is omp only when `printenv OMPCODE` prints `1`. Claude Code sets `CLAUDECODE=1` and omp sets both, so `CLAUDECODE` alone proves nothing. Never move a question to the end of the run or leave another one out.
 
 **(a) Ask for scope.** Offer these two options with these exact labels, and name whichever file step 2 found current values in as the default.
 
@@ -53,7 +53,7 @@ Ask (a), (b), (c), (d), and (e) together in one `ask` call, as one batch, so the
 
 Global lessons, such as standing preferences, always stay in `~/.pstack/` on this machine.
 
-**(d) Ask about omp's own memory (omp only).** omp has a built-in session memory that learns untyped facts from past sessions in the background. State its cost in the question. At session start it sends each finished session to the `default` model role (up to 4000 input tokens each, at most 64 sessions per startup), consolidates with the `smol` role, and injects up to 5000 tokens of summary into every system prompt, subagents included. pstack lessons cost nothing until a playbook step runs `match`. Offer `no` (the default) and `yes`. Ignore the answer when (c) is `off`.
+**(d) Ask about omp's own memory (omp harness only).** Ask it only when `OMPCODE=1`, as step 3 says. omp has a built-in session memory that learns untyped facts from past sessions in the background. State its cost in the question. At session start it sends each finished session to the `default` model role (up to 4000 input tokens each, at most 64 sessions per startup), consolidates with the `smol` role, and injects up to 5000 tokens of summary into every system prompt, subagents included. pstack lessons cost nothing until a playbook step runs `match`. Offer `no` (the default) and `yes`. Ignore the answer when (c) is `off`.
 
 **(e) Ask about automated PR review (GitHub only).** State what it installs in the question. A collaborator or the PR author comments `/review` on a pull request. A GitHub Agentic Workflow (`gh aw`) reviews the diff and CI results read-only, then submits `APPROVE` or `REQUEST_CHANGES` as `github-actions[bot]` with a short verdict comment. Approval adds `ready-for-merge` and undrafts the PR. Name the risk too. The bot's approval counts toward required reviews, so anyone who can push a branch to this repo can get their own PR approved. Offer these options with these exact labels, and name the engine under `installed` as the default, or `no` when nothing is installed.
 
