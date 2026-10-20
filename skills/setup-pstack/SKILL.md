@@ -25,25 +25,39 @@ done
 
 ### 2. Load current state
 
-The role list and their intents are in step 5. Check the project's `.omp/config.yml` first, then `~/.omp/agent/config.yml`. If either already defines `modelRoles.pstack-*`, read those values and the `# pstack budget:` comment above them, treat them as the current choices, and name which file they came from when you ask the scope question in step 3. Otherwise start from the defaults for each intent.
+The role list and their intents are in step 5. Check the project's `.omp/config.yml` first, then `~/.omp/agent/config.yml`. If either already defines `modelRoles.pstack-*`, read those values and the `# pstack budget:` comment above them, treat them as the current choices, and name which file they came from when you ask the scope question in step 3. Otherwise start from the defaults for each intent. Also run `node skill://lessons/scripts/lessons.mjs config` and keep its `enabled`, `projectStore`, and `source` as the current lesson-memory choice.
 
-### 3. Scope, budget, map, and confirm
+### 3. Scope, budget, memory, map, and confirm
 
-**(a) Ask for scope.** Prefer `ask` over free text. Offer these two options with these exact labels, and name whichever file step 2 found current values in as the default.
+Ask (a), (b), (c), and (d) together in one `ask` call, as four questions in one batch, so the user sees every setup choice at once. Never move a question to the end of the run or leave one out.
+
+**(a) Ask for scope.** Offer these two options with these exact labels, and name whichever file step 2 found current values in as the default.
 
 - `this project only — write .omp/config.yml` (recommended: leaves every other project's settings alone)
 - `every project on this machine — write ~/.omp/agent/config.yml`
 
-**(b) Ask for a budget.** Prefer `ask` over free text. Offer these four options with these exact labels, and name the current budget when the config records one.
+**(b) Ask for a budget.** Offer these four options with these exact labels, and name the current budget when the config records one.
 
 - `unlimited — keep max`
 - `large — xhigh reasoning`
 - `medium — high reasoning`
 - `small — medium reasoning`
 
-**(c) Apply it.** `unlimited` leaves every effort where it already is. `large`, `medium`, and `small` set the effort on every real selector to `xhigh`, `high`, or `medium`, panel entries included. `pstack-watch` is the exception: it always takes the account's cheapest fast model that can run shell (haiku-class) at `medium`, whatever the budget, because it mostly waits on a script. The ladder is `off` < `minimal` < `low` < `medium` < `high` < `xhigh` < `max`. When the target level is not in that model's detected `thinking` array, take the highest detected level at or below the target. Never invent a level, and probe whatever you choose as step 1 describes. On a re-run, keep any role you changed by family.
+**(c) Ask about lesson memory.** Agents can keep lessons across sessions: verified root causes from bug fixes, and the gaps users corrected during ticket intake (the **lessons** skill). The user decides whether it is on and where project lessons go. Never pick for them. Offer these five options with these exact labels, and name the current choice from step 2 as the default, or `off` when `config` reported no source.
 
-**(d) Show the roles and confirm.** Show every role with its selector, marking any selector step 1 did not confirm as needing a choice. Ask whether to accept as-is or change specific roles, offering the detected selectors as the options. Prefer `ask` over free text. `pstack-panel-1` through `pstack-panel-4` are four independent roles and one `pstack-panel-<n>` agent runs per configured panel entry, so their values set how many models a review panel actually spans. Give them four different families when the account carries four. Collapsing them to fewer weakens the panel, so say so rather than letting it happen silently.
+- `off`
+- `this project, local — lessons stay on this machine` (`.pstack/lessons.local.jsonl`, git-excluded)
+- `this project, remote — lessons are committed and shared with the team` (`.pstack/lessons.jsonl`, reaches the git remote through PRs, and the agent shows each diff before staging it)
+- `every project, local`
+- `every project, remote`
+
+Global lessons, such as standing preferences, always stay in `~/.pstack/` on this machine.
+
+**(d) Ask about omp's own memory (omp only).** omp has a built-in session memory that learns untyped facts from past sessions in the background. State its cost in the question. At session start it sends each finished session to the `default` model role (up to 4000 input tokens each, at most 64 sessions per startup), consolidates with the `smol` role, and injects up to 5000 tokens of summary into every system prompt, subagents included. pstack lessons cost nothing until a playbook step runs `match`. Offer `no` (the default) and `yes`. Ignore the answer when (c) is `off`.
+
+**(e) Apply it.** `unlimited` leaves every effort where it already is. `large`, `medium`, and `small` set the effort on every real selector to `xhigh`, `high`, or `medium`, panel entries included. `pstack-watch` is the exception: it always takes the account's cheapest fast model that can run shell (haiku-class) at `medium`, whatever the budget, because it mostly waits on a script. The ladder is `off` < `minimal` < `low` < `medium` < `high` < `xhigh` < `max`. When the target level is not in that model's detected `thinking` array, take the highest detected level at or below the target. Never invent a level, and probe whatever you choose as step 1 describes. On a re-run, keep any role you changed by family.
+
+**(f) Show the roles and confirm.** Show every role with its selector, marking any selector step 1 did not confirm as needing a choice. Ask whether to accept as-is or change specific roles, offering the detected selectors as the options. Prefer `ask` over free text. `pstack-panel-1` through `pstack-panel-4` are four independent roles and one `pstack-panel-<n>` agent runs per configured panel entry, so their values set how many models a review panel actually spans. Give them four different families when the account carries four. Collapsing them to fewer weakens the panel, so say so rather than letting it happen silently.
 
 ### 4. Validate
 
@@ -53,7 +67,7 @@ Every selector written must have passed step 1's probe, suffix included. Write a
 
 Read the file step 3(a) chose, the project's `.omp/config.yml` or the global `~/.omp/agent/config.yml`, replace the eight `modelRoles.pstack-*` keys and the eight `task.agentModelOverrides` entries named `pstack-*`, and write the file back. Create the file, and the `.omp/` directory, if the project scope was chosen and neither exists yet.
 
-Your write set is exactly those sixteen values, plus the two memory keys only when the user says yes in step 8(c). Everything else is out of scope, including anything that looks like it ought to be tidy:
+Your write set is exactly those sixteen values, plus `memory.backend: local` and `autolearn.enabled: true` only when the user said `yes` in step 3(d) and (c) is not `off`. Everything else is out of scope, including anything that looks like it ought to be tidy:
 
 - Other `modelRoles` keys (`advisor`, `task`, `smol`, …) keep their values.
 - Other `agentModelOverrides` entries (`project-advisor`, …) keep theirs. Merge into the existing map, leave every sibling entry alone, and if `task.agentModelOverrides` is absent, create it holding the eight pstack entries and nothing more.
@@ -105,41 +119,20 @@ Role intents:
 
 A project's `.omp/config.yml` model roles override the global ones inside that project, so a repo can pin its own pstack models; step 3(a) is what picks which file this skill writes. The `/model` command's Roles view always writes the global keys, by hand.
 
+**Write the lesson-memory choice from step 3(c).** `off` and the `this project` options write the project config. The `every project` options write the global config:
+
+```sh
+node skill://lessons/scripts/lessons.mjs configure --where project --enabled false
+node skill://lessons/scripts/lessons.mjs configure --where project --enabled true --project-store local
+node skill://lessons/scripts/lessons.mjs configure --where global --enabled true --project-store remote
+```
+
+A project config overrides the global one, so `off` wins inside this repo even when another project turned memory on for the machine. Switching stores moves nothing. Old lessons stay readable from both files, and new ones go to the chosen store. If the user goes from `remote` to `local`, ask before deleting the committed `.pstack/lessons.jsonl`, because the team reads it.
+
 ### 6. Confirm
 
-Re-read the file you wrote and show the user the final `modelRoles.pstack-*` values as they now stand in it, naming the file's path. Confirm each `agentModelOverrides` value you wrote is the alias, and say so if one is not. Tell them the roles apply to new task dispatches, since dispatch reloads settings before it resolves an agent. Re-running this skill updates them.
+Re-read the file you wrote and show the user the final `modelRoles.pstack-*` values as they now stand in it, naming the file's path. Confirm each `agentModelOverrides` value you wrote is the alias, and say so if one is not. Tell them the roles apply to new task dispatches, since dispatch reloads settings before it resolves an agent. Re-running this skill updates them. Run `lessons.mjs config` again and show what it reports for lesson memory.
 
 ### 7. Offer a verification skill (optional)
 
 Check whether the project has a way to drive the real app for proof (a `verify-*` skill, or an existing harness). If not, offer once: "want a project-local verification skill, so agents can drive the app the way a user does and prove changes work? I can generate one with `/skill:create-verification-skill`." On yes, read `skill://create-verification-skill` and follow it (resolves wherever pstack is installed: project, user, or plugin). On no, move on without pushing.
-
-### 8. Lesson memory
-
-Agents can keep lessons across sessions: verified root causes from bug fixes, and the gaps users corrected during ticket intake (the **lessons** skill). The user decides. Never turn it on, and never pick where lessons go, without an answer. Prefer `ask` over free text, and run `node skill://lessons/scripts/lessons.mjs config` first so you can name the current choice as the default.
-
-**(a) Turn it on?** Offer these three options with these exact labels. Default to `off` when `config` reports no source.
-
-- `on for this project`
-- `on for every project on this machine`
-- `off`
-
-**(b) Where do this project's lessons go?** Ask only when (a) is on.
-
-- `local — stays on this machine` (`.pstack/lessons.local.jsonl`, git-excluded)
-- `remote — committed with the repo and shared with the team` (`.pstack/lessons.jsonl`, reaches the git remote through PRs, and the agent shows each diff before staging it)
-
-Global lessons, such as standing preferences, always stay in `~/.pstack/` on this machine.
-
-Write the answer with `configure`. `on for this project` and `off` write the project config. `on for every project` writes the global config:
-
-```sh
-node skill://lessons/scripts/lessons.mjs configure --where project --enabled true --project-store local
-node skill://lessons/scripts/lessons.mjs configure --where global --enabled true --project-store remote
-node skill://lessons/scripts/lessons.mjs configure --where project --enabled false
-```
-
-A project config overrides the global one, so `off` here wins inside this repo even when another project turned memory on for the machine. Re-running setup changes the choice. Switching stores moves nothing. Old lessons stay readable from both files, and new ones go to the chosen store. If the user goes from `remote` to `local`, ask before deleting the committed `.pstack/lessons.jsonl`, because the team reads it.
-
-**(c) omp's own memory (omp only).** When (a) is on, offer once to also turn on omp's built-in session memory, which learns untyped facts from past sessions in the background. Tell the user what it costs before they answer. At session start it sends each finished session to the `default` model role (up to 4000 input tokens each, at most 64 sessions per startup) and consolidates with the `smol` role, and it injects up to 5000 tokens of summary into every system prompt, subagents included. pstack lessons cost nothing until a playbook step runs `match`. On yes, set `memory.backend: local` and `autolearn.enabled: true` in the file step 3(a) chose, leaving every other key as step 5 describes. On no, write nothing. pstack lessons work either way.
-
-Confirm by running `config` again and showing the user what it reports.
