@@ -206,6 +206,8 @@ export function renderPretty(verdict: T.WatcherVerdict): string {
       return `AWAITING_REVIEW: waiting for review of the head commit\n${missingLines(verdict.missing)}\n`;
     case "REVIEW_TIMEOUT":
       return `REVIEW_TIMEOUT: no review of the head commit after ${Math.round(verdict.waitedSeconds)}s\n${missingLines(verdict.missing)}\n`;
+    case "REVIEW_FAILED":
+      return `REVIEW_FAILED: the approver run failed without a review (comment posted ${verdict.failure.postedAt})\nexcerpt=${verdict.failure.excerpt}\n${missingLines(verdict.missing)}\n`;
     default: {
       const exhaustive: never = verdict;
       return exhaustive;

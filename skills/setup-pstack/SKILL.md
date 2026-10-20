@@ -149,8 +149,9 @@ On a yes, run `node skill://setup-pstack/scripts/pr-review.mjs install --engine 
 
 - `canApproveError` means an organization policy blocks Actions from approving. An org owner must allow it under the org's Settings → Actions → General. Until then the review runs but cannot approve.
 - `missingSecrets` lists groups of alternatives, and one secret per group is enough. Tell the user to run `gh aw secrets bootstrap` or `gh secret set <NAME>` in their own terminal. Never ask for a secret value or pass one through the chat.
+- `codeOwnerReviewRequired: true` means the default branch requires a code-owner review, which the bot's approval never satisfies. Approved PRs stay blocked until a code owner approves too. Say so. `null` means classic branch protection was unreadable without admin access, so name that as unknown.
 
-The workflow fires only from the default branch. Commit the returned `files` on a new branch and open a ready PR. Tell the user the review reads `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `.github/copilot-instructions.md`, and `.github/instructions/*.instructions.md` when present. Repo-specific review rules go in `.github/review-rules.md`, which needs no recompile.
+The workflow fires only from the default branch. Commit the returned `files` on a new branch and open a ready PR. Tell the user the review reads `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `.github/copilot-instructions.md`, and `.github/instructions/*.instructions.md` when present. Repo-specific review rules go in `.github/review-rules.md`, which needs no recompile. A push to the PR removes `ready-for-merge`, because the approval no longer covers the head. A PR that GitHub Actions opened is refused, because GitHub does not let the bot review its own PR.
 
 ### 8. Offer a verification skill (optional)
 

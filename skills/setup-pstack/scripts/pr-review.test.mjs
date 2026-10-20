@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { detect, parseInstalled, render, requiredSecrets } from './pr-review.mjs';
+import { detect, NO_CLASSIC_REVIEWS, parseInstalled, render, requiredSecrets, requiresCodeOwnerReview } from './pr-review.mjs';
 
 const repoWithRemote = url => {
   const dir = mkdtempSync(join(tmpdir(), 'pr-review-'));
@@ -118,5 +118,67 @@ describe('publication gate', () => {
   it('passes a matching approval bound to the captured head and base', async () => {
     const body = `VERDICT: APPROVE\nReviewed commit: ${HEAD}\nReviewed base: ${BASE}\nSummary: fine.`;
     expect(await gate([review('APPROVE', body), comment('VERDICT: APPROVE\nSummary: fine.')])).toEqual([]);
+  });
+});
+
+// Runs one github-script body from a rendered template, cut between `script: |` and `end`.
+async function runScript(text, after, end, github, payload, outputs = {}) {
+  const block = text.slice(text.indexOf(after));
+  const script = block.slice(block.indexOf('script: |\n') + 10, block.indexOf(end)).replace(/^ {10}/gm, '').replace(/^ {2}/gm, '');
+  const run = new (Object.getPrototypeOf(async () => {}).constructor)('github', 'context', 'core', script);
+  await run(github, { repo: { owner: 'acme', repo: 'app' }, payload }, { info: () => {}, setOutput: (k, v) => { outputs[k] = v; } });
+  return outputs;
+}
+
+describe('pre-activation', () => {
+  const request = async author => {
+    const repo = { id: 1 };
+    const pr = { number: 7, state: 'open', user: { login: author }, head: { sha: HEAD, repo }, base: { sha: BASE, repo } };
+    const payload = { action: 'created', repository: repo, issue: { number: 7, pull_request: { url: 'x' } },
+      comment: { body: '/review', user: { login: 'dev' }, author_association: 'COLLABORATOR' } };
+    return runScript(render({})['pr-review.md'], 'id: validate_review_request', '\nrun-name:', { rest: { pulls: { get: async () => ({ data: pr }) } } }, payload);
+  };
+
+  it('refuses a PR that GitHub Actions opened, because the bot cannot review its own PR', async () => {
+    await expect(request('github-actions[bot]')).rejects.toThrow('GitHub Actions opened this pull request');
+  });
+
+  it('accepts a collaborator request on a PR another bot opened', async () => {
+    expect(await request('dependabot[bot]')).toMatchObject({ should_review: 'true', pr_number: '7', head_sha: HEAD });
+  });
+});
+
+describe('stale approval label', () => {
+  const push = async removeLabel => runScript(render({})['pr-review-status.yml'], 'clear-stale-approval:', '\n  report:',
+    { rest: { issues: { removeLabel } } }, { pull_request: { number: 7 } });
+
+  it('drops ready-for-merge from the PR when a new head is pushed', async () => {
+    const calls = [];
+    await push(async args => { calls.push(args); });
+    expect(calls).toEqual([{ owner: 'acme', repo: 'app', issue_number: 7, name: 'ready-for-merge' }]);
+  });
+
+  it('tolerates a PR without the label but surfaces other API failures', async () => {
+    await push(async () => { throw Object.assign(new Error('Label does not exist'), { status: 404 }); });
+    await expect(push(async () => { throw Object.assign(new Error('boom'), { status: 500 }); })).rejects.toThrow('boom');
+  });
+});
+
+describe('requiresCodeOwnerReview', () => {
+  const ruleset = require => JSON.stringify([{ type: 'pull_request', parameters: { require_code_owner_review: require } }]);
+
+  it('reports a code-owner requirement from a ruleset or classic protection', () => {
+    expect(requiresCodeOwnerReview({ rules: ruleset(true), protection: null })).toBe(true);
+    expect(requiresCodeOwnerReview({ rules: '[]', protection: '{"require_code_owner_reviews":true}' })).toBe(true);
+  });
+
+  it('reports false only when both rulesets and classic protection are known to be clear', () => {
+    expect(requiresCodeOwnerReview({ rules: ruleset(false), protection: NO_CLASSIC_REVIEWS })).toBe(false);
+    expect(requiresCodeOwnerReview({ rules: '[]', protection: '{"require_code_owner_reviews":false}' })).toBe(false);
+  });
+
+  it('reports unknown when classic protection could not be read', () => {
+    expect(requiresCodeOwnerReview({ rules: '[]', protection: null })).toBeNull();
+    expect(requiresCodeOwnerReview({ rules: null, protection: NO_CLASSIC_REVIEWS })).toBeNull();
   });
 });

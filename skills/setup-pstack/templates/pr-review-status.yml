@@ -4,6 +4,8 @@ on:
   workflow_run:
     workflows: ['PR Review']
     types: [completed]
+  pull_request:
+    types: [synchronize]
 
 permissions:
   actions: read
@@ -12,7 +14,26 @@ permissions:
   pull-requests: write
 
 jobs:
+  clear-stale-approval:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.id == github.event.repository.id
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Drop ready-for-merge when the approved head is replaced
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            try {
+              await github.rest.issues.removeLabel({
+                ...context.repo,
+                issue_number: context.payload.pull_request.number,
+                name: 'ready-for-merge',
+              });
+            } catch (err) {
+              if (err.status !== 404) throw err;
+            }
+
   report:
+    if: github.event_name == 'workflow_run'
     runs-on: ubuntu-24.04
     steps:
       - name: Report skipped or failed review on the PR
@@ -80,7 +101,7 @@ jobs:
             });
 
   apply-labels:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     steps:
       - name: Apply review labels after the review was published

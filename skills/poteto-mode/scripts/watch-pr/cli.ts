@@ -158,7 +158,7 @@ export function parseArgs(
     )
     .option(
       "--since <iso>",
-      "count only awaited reviews submitted after this time (the approver trigger)",
+      "count only awaited reviews submitted after this time (the approver trigger); with a non-Copilot --await-review, a pr-review-status failure comment posted after it ends the watch with exit 10",
       isoTime
     )
     .option(
@@ -168,7 +168,7 @@ export function parseArgs(
     )
     .option(
       "--approver-command <text>",
-      "with --status-only, count your PR comments that start with this command"
+      "with --status-only, count your PR comments that start with this command, minus VERDICT: DEFERRED reviews (a deferral spends no approver run)"
     )
     .option(
       "--status-only",

@@ -95,6 +95,11 @@ export interface MissingReview {
   readonly reviewedSha: string | null;
   readonly review: MatchedReview | null;
 }
+/** The approver workflow's own status comment: its run failed without a review. */
+export interface ReviewRunFailure {
+  readonly postedAt: string;
+  readonly excerpt: string;
+}
 interface CheckDetails {
   readonly name: string;
   readonly reportedState: string;
@@ -427,6 +432,10 @@ export type TerminalVerdict =
       readonly missing: NonEmpty<MissingReview>;
       readonly waitedSeconds: number;
     })
+  | (Terminal<"REVIEW_FAILED", 10, "single" | "stack"> & {
+      readonly missing: NonEmpty<MissingReview>;
+      readonly failure: ReviewRunFailure;
+    })
   | BlockerVerdict
   | TimeoutVerdict;
 export type WatcherVerdict = ProgressVerdict | TerminalVerdict;
@@ -460,6 +469,7 @@ export interface ShipActivity {
   readonly comments: readonly {
     readonly authorLogin: string | null;
     readonly body: string;
+    readonly createdAt: string;
   }[];
   /** Oldest first; each commit's failed check names. */
   readonly commits: readonly {
@@ -471,7 +481,7 @@ export interface ShipCounts {
   readonly pr: PrContext;
   readonly startedAt: string;
   readonly copilotReviews: number;
-  /** Approver commands the agent posted; null without --approver-command. */
+  /** Approver commands the agent posted, minus VERDICT: DEFERRED replies; null without --approver-command. */
   readonly approverRuns: number | null;
   /** Pushes that followed a failure of each check. */
   readonly ciFixes: Readonly<Record<string, number>>;

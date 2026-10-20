@@ -92,12 +92,30 @@ export function install(cwd, opts) {
       canApproveError = String(err.stderr ?? err.message).trim();
     }
   }
+  const branch = sh('gh', ['repo', 'view', '--json', 'defaultBranchRef', '--jq', '.defaultBranchRef.name'], cwd);
+  const rules = branch ? sh('gh', ['api', `repos/${state.repo}/rules/branches/${branch}`], cwd) : null;
+  const classic = branch ? spawnSync('gh', ['api', `repos/${state.repo}/branches/${branch}/protection/required_pull_request_reviews`], { cwd, encoding: 'utf8' }) : null;
+  const protection = classic?.status === 0 ? classic.stdout : /Branch not protected|not enabled/.test(classic?.stderr ?? '') ? NO_CLASSIC_REVIEWS : null;
   return {
     repo: state.repo,
     files: [...[FILES.workflow, FILES.lock, FILES.status].map(f => `${WORKFLOWS}/${f}`), '.github/aw/actions-lock.json', '.gitattributes'].filter(f => existsSync(join(cwd, f))),
     missingSecrets: needed.filter(group => !group.some(s => present.has(s))),
     canApprove, canApproveError, conflicts: state.conflicts,
+    codeOwnerReviewRequired: requiresCodeOwnerReview({ rules, protection }),
   };
+}
+
+export const NO_CLASSIC_REVIEWS = 'none';
+
+// The bot's approval never satisfies a code-owner requirement, so the PR stays blocked after APPROVE.
+// `protection` is the classic required_pull_request_reviews JSON, NO_CLASSIC_REVIEWS when GitHub says none is set, or null when unreadable (needs admin).
+export function requiresCodeOwnerReview({ rules, protection }) {
+  const parse = text => { try { return text ? JSON.parse(text) : null; } catch { return null; } };
+  const rulesets = parse(rules);
+  if (Array.isArray(rulesets) && rulesets.some(r => r.type === 'pull_request' && r.parameters?.require_code_owner_review === true)) return true;
+  const classic = protection === NO_CLASSIC_REVIEWS ? { require_code_owner_reviews: false } : parse(protection);
+  if (classic?.require_code_owner_reviews === true) return true;
+  return Array.isArray(rulesets) && classic ? false : null;
 }
 
 function parseArgs(argv) {

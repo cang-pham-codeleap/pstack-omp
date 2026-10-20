@@ -205,6 +205,34 @@ export async function readSnapshot(args: {
     ),
   };
 }
+const REVIEW_STATUS_MARKER = "<!-- pr-review-status:";
+// The status workflow's comment starts with the marker, then "⚠️ PR Review <status>." and a detail line.
+// It must come from the approver's own account, so a pasted marker cannot end the watch.
+function approverFailure(
+  activity: T.ShipActivity,
+  since: string,
+  approverLogin: string
+): T.ReviewRunFailure | null {
+  const sinceMs = Date.parse(since);
+  const approver = canonicalReviewer(approverLogin);
+  const comment = activity.comments.findLast(
+    (candidate) =>
+      candidate.authorLogin !== null &&
+      canonicalReviewer(candidate.authorLogin) === approver &&
+      candidate.body.includes(REVIEW_STATUS_MARKER) &&
+      Date.parse(candidate.createdAt) > sinceMs
+  );
+  if (comment === undefined) return null;
+  const lines = comment.body
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("<!--"));
+  const start = Math.max(0, lines.findIndex((line) => line.includes("⚠️")));
+  return {
+    postedAt: comment.createdAt,
+    excerpt: lines.slice(start, start + 2).join(" ").slice(0, 400),
+  };
+}
 export function shipCounts(
   pr: T.PrContext,
   activity: T.ShipActivity,
@@ -227,11 +255,19 @@ export function shipCounts(
     approverRuns:
       command === null
         ? null
-        : activity.comments.filter(
-            (comment) =>
-              comment.authorLogin === activity.viewerLogin &&
-              `${comment.body.trim().replace(/\s+/g, " ")} `.startsWith(`${command} `)
-          ).length,
+        : Math.max(
+            0,
+            activity.comments.filter(
+              (comment) =>
+                comment.authorLogin === activity.viewerLogin &&
+                `${comment.body.trim().replace(/\s+/g, " ")} `.startsWith(`${command} `)
+            ).length -
+              reviews.filter(
+                (review) =>
+                  review.state === "COMMENTED" &&
+                  review.body.trimStart().startsWith("VERDICT: DEFERRED")
+              ).length
+          ),
     ciFixes,
   };
 }
@@ -638,6 +674,33 @@ export async function runSimple(args: {
           );
     if (missing === null) awaiting = null;
     else {
+      // The approver workflow publishes no review when its run fails; it posts
+      // a status comment instead, so waiting out the timeout would only hide it.
+      const approvers = nonEmpty(
+        missing.filter((entry) => canonicalReviewer(entry.login) !== "copilot")
+      );
+      if (approvers !== null && args.options.since !== null)
+        for (const entry of approvers) {
+          const failure = approverFailure(
+            await args.dependencies.reader.shipActivity(entry.pr),
+            args.options.since,
+            entry.login
+          );
+          if (failure !== null)
+            return {
+              kind: "terminal",
+              verdict: stamp(
+                {
+                  kind: "REVIEW_FAILED",
+                  terminal: true,
+                  exitCode: 10,
+                  missing: approvers,
+                  failure,
+                },
+                args.mode
+              ),
+            };
+        }
       const now = args.dependencies.clock.now();
       const key = complete
         .map((row) =>

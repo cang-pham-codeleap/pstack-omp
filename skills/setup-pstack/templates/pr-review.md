@@ -37,6 +37,9 @@ on:
               pullRequest.base.repo?.id !== repository?.id) {
             throw new Error('Only open, same-repository pull requests can be reviewed.');
           }
+          if (pullRequest.user?.login === 'github-actions[bot]') {
+            throw new Error('GitHub Actions opened this pull request, and GitHub does not let it review its own pull request; a human must review it.');
+          }
           core.setOutput('should_review', 'true');
           core.setOutput('pr_number', String(pullRequest.number));
           core.setOutput('head_sha', pullRequest.head.sha);
