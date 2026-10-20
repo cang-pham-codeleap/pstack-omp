@@ -14,7 +14,7 @@ export const RESOLVE_THREAD_MUTATION =
 export const PR_CHECK_ROLLUP_QUERY =
   "\nquery PrCheckRollup($owner: String!, $repo: String!, $pr: Int!, $after: String) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      commits(last: 1) {\n        nodes {\n          commit {\n            statusCheckRollup {\n              contexts(first: 100, after: $after) {\n                pageInfo {\n                  hasNextPage\n                  endCursor\n                }\n                nodes {\n                  __typename\n                  ... on CheckRun {\n                    databaseId\n                    name\n                    status\n                    conclusion\n                    detailsUrl\n                    checkSuite { workflowRun { databaseId event workflow { databaseId name } } }\n                  }\n                  ... on StatusContext {\n                    context\n                    state\n                    targetUrl\n                  }\n                }\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
 export const SHIP_ACTIVITY_QUERY =
-  "\nquery ShipActivity($owner: String!, $repo: String!, $pr: Int!) {\n  viewer { login }\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      createdAt\n      comments(last: 100) {\n        nodes {\n          body\n          author { login }\n        }\n      }\n      commits(last: 100) {\n        nodes {\n          commit {\n            oid\n            statusCheckRollup {\n              contexts(first: 100) {\n                nodes {\n                  __typename\n                  ... on CheckRun { name conclusion }\n                  ... on StatusContext { context state }\n                }\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
+  "\nquery ShipActivity($owner: String!, $repo: String!, $pr: Int!) {\n  viewer { login }\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      createdAt\n      comments(last: 100) {\n        nodes {\n          body\n          createdAt\n          author { login }\n        }\n      }\n      commits(last: 100) {\n        nodes {\n          commit {\n            oid\n            statusCheckRollup {\n              contexts(first: 100) {\n                nodes {\n                  __typename\n                  ... on CheckRun { name conclusion }\n                  ... on StatusContext { context state }\n                }\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
 
 interface CommandResult {
   readonly code: number;
@@ -514,6 +514,7 @@ export function parseShipActivity(value: unknown): T.ShipActivity {
                 `comments[${index}].author.login`
               ),
         body: string(comment.body, `comments[${index}].body`),
+        createdAt: string(comment.createdAt, `comments[${index}].createdAt`),
       };
     }
   );

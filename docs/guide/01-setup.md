@@ -33,6 +33,10 @@ At the end of setup, `/skill:setup-pstack` looks for a way to prove app behavior
 
 Say yes and it writes `.omp/skills/verify-<app>/`, a project-local skill that teaches agents to drive your app the way a user does. It proves the skill works once before handing it over. Say no and setup moves on. You can run `/skill:create-verification-skill` yourself any time. [Verify and ship](./06-verify-and-ship.md#create-a-project-verification-skill) covers when it earns its place.
 
+## Turn on `/review`, or don't
+
+When the repo lives on GitHub, setup's first question batch also asks whether to install an automated PR review. Pick the Copilot engine (no secret) or the Claude engine (an `ANTHROPIC_API_KEY` repo secret), or say no. On yes it writes a [GitHub Agentic Workflow](https://github.github.com/gh-aw/introduction/overview/) to `.github/workflows/pr-review.md`, compiles it, lets GitHub Actions approve pull requests, and opens a PR with the files. Once that merges, comment `/review` on any PR. The agent reads the diff and CI results, approves or requests changes, and labels the PR. Put repo-specific review rules in `.github/review-rules.md`. The bot's approval counts toward required reviews, so weigh that before you turn it on. Repos hosted elsewhere never see the question.
+
 After setup, start a new chat. The model roles apply to new sessions.
 
 ## Run your first task

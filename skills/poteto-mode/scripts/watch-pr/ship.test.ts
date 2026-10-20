@@ -335,6 +335,80 @@ describe("await review bots", () => {
     });
   });
 
+  describe("approver run failure comment", () => {
+    const since = "2026-07-26T01:00:00Z";
+    const options = polling({ awaitReview: ["github-actions[bot]"], since, reviewTimeout: 600 });
+    const failureBody = (runId: number) =>
+      `<!-- pr-review-status: ${runId}:1 -->\n⚠️ PR Review failure.\nJob \`agent\` ended with \`failure\`. Post a new \`/review\` comment after resolving the workflow problem.`;
+    const activity = (createdAt: string, authorLogin = "github-actions") => ({
+      createdAt: "2026-07-25T10:00:00Z",
+      viewerLogin: "agent",
+      comments: [{ authorLogin, body: failureBody(42), createdAt }],
+      commits: [{ oid: "head", failedChecks: [] }],
+    });
+
+    it("ends the watch with exit 10 and the status excerpt when the comment is after --since", async () => {
+      const { clock, elapsed } = steppedClock();
+      const { verdict, events } = await watch(
+        fakeReader({ shipActivity: activity("2026-07-26T01:03:00Z") }),
+        clock,
+        options
+      );
+      expect(events).toEqual([]);
+      expect(elapsed()).toBe(0);
+      expect(verdict).toMatchObject({
+        kind: "REVIEW_FAILED",
+        terminal: true,
+        exitCode: 10,
+        failure: { postedAt: "2026-07-26T01:03:00Z" },
+        missing: [{ login: "github-actions[bot]" }],
+      });
+      if (verdict.kind !== "REVIEW_FAILED") throw new Error("unreachable");
+      expect(verdict.failure.excerpt).toContain("⚠️ PR Review failure.");
+      expect(verdict.failure.excerpt).toContain("ended with `failure`");
+      expect(verdict.failure.excerpt).not.toContain("<!--");
+    });
+
+    it("ignores a failure comment from before --since", async () => {
+      const { verdict } = await watch(
+        fakeReader({ shipActivity: activity("2026-07-26T00:59:00Z") }),
+        steppedClock().clock,
+        polling({ ...options, reviewTimeout: 20 })
+      );
+      expect(verdict).toMatchObject({ kind: "REVIEW_TIMEOUT", exitCode: 9 });
+    });
+
+    it("ignores the marker when someone other than the approver posts it", async () => {
+      const { verdict } = await watch(
+        fakeReader({ shipActivity: activity("2026-07-26T01:03:00Z", "mallory") }),
+        steppedClock().clock,
+        polling({ ...options, reviewTimeout: 20 })
+      );
+      expect(verdict).toMatchObject({ kind: "REVIEW_TIMEOUT", exitCode: 9 });
+    });
+
+    it("lets an APPROVED review of the head win over a failure comment", async () => {
+      const approved = review("github-actions[bot]", "head", "APPROVED", "2026-07-26T01:06:00Z", "LGTM");
+      const { verdict } = await watch(
+        fakeReader({ reviews: [approved], shipActivity: activity("2026-07-26T01:03:00Z") }),
+        steppedClock().clock,
+        options
+      );
+      expect(verdict).toMatchObject({ kind: "READY", exitCode: 0 });
+    });
+
+    it("does not read comments when only Copilot is awaited", async () => {
+      const reader = fakeReader({ shipActivity: activity("2026-07-26T01:03:00Z") });
+      const { verdict } = await watch(
+        reader,
+        steppedClock().clock,
+        polling({ since, reviewTimeout: 20 })
+      );
+      expect(verdict).toMatchObject({ kind: "REVIEW_TIMEOUT" });
+      expect(reader.calls).not.toContain("shipActivity");
+    });
+  });
+
   it("waits for re-review when only the awaited bot's CHANGES_REQUESTED is on an old head", async () => {
     const options = polling({ awaitReview: ["review-bot[bot]"], reviewTimeout: 20 });
     const facts = { reviewDecision: "CHANGES_REQUESTED" } as const;
@@ -390,6 +464,51 @@ describe("await review bots", () => {
     expect(verdict).toMatchObject({ kind: "BLOCKER", exitCode: 8, blocker: { headSha: "abcdef2" } });
   });
 
+  it("does not count a VERDICT: DEFERRED reply as an approver run", async () => {
+    const harness = testHarness(
+      fakeReader({
+        reviews: [
+          review("review-bot[bot]", "head", "COMMENTED", "2026-07-26T01:05:00Z", "VERDICT: DEFERRED\nCI pending"),
+          review("review-bot[bot]", "head", "COMMENTED", "2026-07-26T01:06:00Z", "plain comment"),
+        ],
+        shipActivity: {
+          createdAt: "2026-07-25T10:00:00Z",
+          viewerLogin: "agent",
+          comments: [
+            { authorLogin: "agent", body: "/review", createdAt: "2026-07-26T01:00:00Z" },
+            { authorLogin: "agent", body: "/review", createdAt: "2026-07-26T01:10:00Z" },
+          ],
+          commits: [{ oid: "head", failedChecks: [] }],
+        },
+      })
+    );
+    await main(
+      ["--owner", "owner", "--repo", "repo", "--pr", "1", "--status-only", "--approver-command", "/review"],
+      harness.runtime
+    );
+    expect(JSON.parse(harness.stdout[0]).ship[0].approverRuns).toBe(1);
+
+    const extra = testHarness(
+      fakeReader({
+        reviews: [
+          review("review-bot[bot]", "head", "COMMENTED", "2026-07-26T01:05:00Z", "VERDICT: DEFERRED"),
+          review("review-bot[bot]", "head", "COMMENTED", "2026-07-26T01:06:00Z", "VERDICT: DEFERRED"),
+        ],
+        shipActivity: {
+          createdAt: "2026-07-25T10:00:00Z",
+          viewerLogin: "agent",
+          comments: [{ authorLogin: "agent", body: "/review", createdAt: "2026-07-26T01:00:00Z" }],
+          commits: [{ oid: "head", failedChecks: [] }],
+        },
+      })
+    );
+    await main(
+      ["--owner", "owner", "--repo", "repo", "--pr", "1", "--status-only", "--approver-command", "/review"],
+      extra.runtime
+    );
+    expect(JSON.parse(extra.stdout[0]).ship[0].approverRuns).toBe(0);
+  });
+
   it("derives ship counts from GitHub in --status-only", async () => {
     const harness = testHarness(
       fakeReader({
@@ -398,10 +517,10 @@ describe("await review bots", () => {
           createdAt: "2026-07-25T10:00:00Z",
           viewerLogin: "agent",
           comments: [
-            { authorLogin: "agent", body: "/review" },
-            { authorLogin: "agent", body: " /review\nplease" },
-            { authorLogin: "agent", body: "/reviewer x" },
-            { authorLogin: "human", body: "/review" },
+            { authorLogin: "agent", body: "/review", createdAt: "2026-07-25T10:01:00Z" },
+            { authorLogin: "agent", body: " /review\nplease", createdAt: "2026-07-25T10:02:00Z" },
+            { authorLogin: "agent", body: "/reviewer x", createdAt: "2026-07-25T10:03:00Z" },
+            { authorLogin: "human", body: "/review", createdAt: "2026-07-25T10:04:00Z" },
           ],
           commits: [
             { oid: "a", failedChecks: ["lint"] },

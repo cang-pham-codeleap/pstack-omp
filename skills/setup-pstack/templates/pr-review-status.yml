@@ -1,0 +1,185 @@
+name: PR Review Status Reporter
+
+on:
+  workflow_run:
+    workflows: ['PR Review']
+    types: [completed]
+  pull_request:
+    types: [synchronize]
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  clear-stale-approval:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.id == github.event.repository.id
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Drop ready-for-merge when the approved head is replaced
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            try {
+              await github.rest.issues.removeLabel({
+                ...context.repo,
+                issue_number: context.payload.pull_request.number,
+                name: 'ready-for-merge',
+              });
+            } catch (err) {
+              if (err.status !== 404) throw err;
+            }
+
+  report:
+    if: github.event_name == 'workflow_run'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Report skipped or failed review on the PR
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          RUN_NAME: ${{ github.event.workflow_run.display_title }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        with:
+          script: |
+            const runId = Number(process.env.RUN_ID);
+            const runAttempt = process.env.RUN_ATTEMPT;
+            const runName = process.env.RUN_NAME ?? '';
+            const conclusion = process.env.RUN_CONCLUSION ?? 'unknown';
+            const prNumber = Number(runName.match(/PR Review #(\d+)/)?.[1] ?? 0);
+
+            if (!Number.isSafeInteger(runId) || !Number.isSafeInteger(prNumber) || prNumber < 1) {
+              core.warning('The completed review run did not expose a PR number in its run name.');
+              return;
+            }
+
+            const jobs = await github.paginate(
+              github.rest.actions.listJobsForWorkflowRun,
+              { ...context.repo, run_id: runId, per_page: 100 },
+            );
+            const coreJobs = jobs.filter(({ name }) =>
+              ['activation', 'agent', 'capture_review_target', 'pre_activation', 'safe_outputs']
+                .includes(name),
+            );
+            const reviewRequested = coreJobs.some(({ name, conclusion: jobConclusion }) =>
+              name === 'capture_review_target' && jobConclusion === 'success');
+            const skippedJob = reviewRequested
+              ? coreJobs.find(({ conclusion: jobConclusion }) => jobConclusion === 'skipped')
+              : undefined;
+            const failedJob = coreJobs.find(({ conclusion: jobConclusion }) =>
+              ['failure', 'cancelled', 'timed_out', 'action_required', 'stale'].includes(jobConclusion),
+            );
+
+            if (conclusion === 'success' && !skippedJob && !failedJob) {
+              return;
+            }
+
+            const marker = `<!-- pr-review-status: ${runId}:${runAttempt} -->`;
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              { ...context.repo, issue_number: prNumber, per_page: 100 },
+            );
+            if (comments.some(({ body }) => body?.includes(marker))) {
+              return;
+            }
+
+            const status = failedJob?.conclusion ?? skippedJob?.conclusion ?? conclusion;
+            const detail = failedJob
+              ? `Job \`${failedJob.name}\` ended with \`${failedJob.conclusion}\`.`
+              : skippedJob
+                ? `Job \`${skippedJob.name}\` was skipped.`
+                : 'The review workflow did not complete successfully.';
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: prNumber,
+              body: `${marker}
+            ⚠️ PR Review ${status}.
+            ${detail} Post a new \`/__COMMAND__\` comment after resolving the workflow problem.`,
+            });
+
+  apply-labels:
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Apply review labels after the review was published
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          RUN_NAME: ${{ github.event.workflow_run.display_title }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        with:
+          script: |
+            const number = Number(process.env.RUN_NAME?.match(/PR Review #(\d+)/)?.[1] ?? 0);
+            if (!Number.isSafeInteger(number) || number < 1) return;
+            const runJobs = await github.paginate(
+              github.rest.actions.listJobsForWorkflowRun,
+              { ...context.repo, run_id: Number(process.env.RUN_ID), per_page: 100 },
+            );
+            if (!runJobs.some(({ name, conclusion }) => name === 'safe_outputs' && conclusion === 'success')) {
+              core.info('No published review in this run; leaving labels unchanged.');
+              return;
+            }
+            const { data: live } = await github.rest.pulls.get({ ...context.repo, pull_number: number });
+            const liveHead = live.head.sha;
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              ...context.repo, pull_number: number, per_page: 100,
+            });
+            const latest = reviews
+              .filter(r => r.user?.login === 'github-actions[bot]' && r.commit_id === liveHead &&
+                ['APPROVED', 'CHANGES_REQUESTED'].includes(r.state))
+              .pop();
+            const verdict = latest?.state === 'APPROVED' ? 'APPROVE'
+              : latest?.state === 'CHANGES_REQUESTED' ? 'REQUEST_CHANGES' : '';
+            if (verdict === 'APPROVE') {
+              core.info(`Review approved for PR #${number}. Promoting to ready-for-merge.`);
+              await github.rest.issues.addLabels({
+                ...context.repo,
+                issue_number: number,
+                labels: ['ready-for-merge'],
+              });
+              try {
+                await github.rest.issues.removeLabel({
+                  ...context.repo,
+                  issue_number: number,
+                  name: 'changes-requested',
+                });
+              } catch (_) {}
+              try {
+                await github.rest.issues.removeLabel({
+                  ...context.repo,
+                  issue_number: number,
+                  name: 'ready-for-review',
+                });
+              } catch (_) {}
+
+              if (live.draft) {
+                try {
+                  await github.graphql(`
+                    mutation($id: ID!) {
+                      markPullRequestReadyForReview(input: { pullRequestId: $id }) {
+                        pullRequest { isDraft }
+                      }
+                    }
+                  `, { id: live.node_id });
+                  core.info(`PR #${number} marked ready for review (undrafted).`);
+                } catch (err) {
+                  core.warning(`Failed to mark draft PR #${number} ready for review: ${err.message}`);
+                }
+              }
+            } else if (verdict === 'REQUEST_CHANGES') {
+              core.info(`Changes requested for PR #${number}. Cleaning up labels.`);
+              try {
+                await github.rest.issues.removeLabel({
+                  ...context.repo,
+                  issue_number: number,
+                  name: 'ready-for-merge',
+                });
+              } catch (_) {}
+              await github.rest.issues.addLabels({
+                ...context.repo,
+                issue_number: number,
+                labels: ['changes-requested'],
+              });
+            }

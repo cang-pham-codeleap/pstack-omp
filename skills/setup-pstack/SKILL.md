@@ -1,6 +1,6 @@
 ---
 name: setup-pstack
-description: Configure which models pstack's role agents use and at what reasoning budget, and whether agents keep a lesson memory across sessions. Detects the models this machine can actually spawn and writes the pstack-* entries into the project's .omp/config.yml or the global ~/.omp/agent/config.yml, whichever the user picks. Use for /setup-pstack, "configure pstack models", "pstack budget", changing pstack's model choices, or turning pstack memory on or off.
+description: Configure which models pstack's role agents use and at what reasoning budget, whether agents keep a lesson memory across sessions, and whether this GitHub repo gets a /review workflow that reviews and approves PRs. Detects the models this machine can actually spawn and writes the pstack-* entries into the project's .omp/config.yml or the global ~/.omp/agent/config.yml, whichever the user picks. Use for /setup-pstack, "configure pstack models", "pstack budget", changing pstack's model choices, turning pstack memory on or off, or adding automated PR review and approval.
 ---
 
 # Setup pstack
@@ -25,11 +25,11 @@ done
 
 ### 2. Load current state
 
-The role list and their intents are in step 5. Check the project's `.omp/config.yml` first, then `~/.omp/agent/config.yml`. If either already defines `modelRoles.pstack-*`, read those values and the `# pstack budget:` comment above them, treat them as the current choices, and name which file they came from when you ask the scope question in step 3. Otherwise start from the defaults for each intent. Also run `node skill://lessons/scripts/lessons.mjs config` and keep its `enabled`, `projectStore`, and `source` as the current lesson-memory choice.
+The role list and their intents are in step 5. Check the project's `.omp/config.yml` first, then `~/.omp/agent/config.yml`. If either already defines `modelRoles.pstack-*`, read those values and the `# pstack budget:` comment above them, treat them as the current choices, and name which file they came from when you ask the scope question in step 3. Otherwise start from the defaults for each intent. Also run `node skill://lessons/scripts/lessons.mjs config` and keep its `enabled`, `projectStore`, and `source` as the current lesson-memory choice. Also run `node skill://setup-pstack/scripts/pr-review.mjs detect` and keep its `github`, `installed`, and `conflicts` for step 3(e).
 
-### 3. Scope, budget, memory, map, and confirm
+### 3. Scope, budget, memory, review, map, and confirm
 
-Ask (a), (b), (c), and (d) together in one `ask` call, as four questions in one batch, so the user sees every setup choice at once. Never move a question to the end of the run or leave one out.
+Ask (a), (b), (c), (d), and (e) together in one `ask` call, as one batch, so the user sees every setup choice at once. Leave out (e) only when step 2's `detect` reported `github: false`, and then say nothing about it. Never move a question to the end of the run or leave another one out.
 
 **(a) Ask for scope.** Offer these two options with these exact labels, and name whichever file step 2 found current values in as the default.
 
@@ -55,9 +55,17 @@ Global lessons, such as standing preferences, always stay in `~/.pstack/` on thi
 
 **(d) Ask about omp's own memory (omp only).** omp has a built-in session memory that learns untyped facts from past sessions in the background. State its cost in the question. At session start it sends each finished session to the `default` model role (up to 4000 input tokens each, at most 64 sessions per startup), consolidates with the `smol` role, and injects up to 5000 tokens of summary into every system prompt, subagents included. pstack lessons cost nothing until a playbook step runs `match`. Offer `no` (the default) and `yes`. Ignore the answer when (c) is `off`.
 
-**(e) Apply it.** `unlimited` leaves every effort where it already is. `large`, `medium`, and `small` set the effort on every real selector to `xhigh`, `high`, or `medium`, panel entries included. `pstack-watch` is the exception: it always takes the account's cheapest fast model that can run shell (haiku-class) at `medium`, whatever the budget, because it mostly waits on a script. The ladder is `off` < `minimal` < `low` < `medium` < `high` < `xhigh` < `max`. When the target level is not in that model's detected `thinking` array, take the highest detected level at or below the target. Never invent a level, and probe whatever you choose as step 1 describes. On a re-run, keep any role you changed by family.
+**(e) Ask about automated PR review (GitHub only).** State what it installs in the question. A collaborator or the PR author comments `/review` on a pull request. A GitHub Agentic Workflow (`gh aw`) reviews the diff and CI results read-only, then submits `APPROVE` or `REQUEST_CHANGES` as `github-actions[bot]` with a short verdict comment. Approval adds `ready-for-merge` and undrafts the PR. Name the risk too. The bot's approval counts toward required reviews, so anyone who can push a branch to this repo can get their own PR approved. Offer these options with these exact labels, and name the engine under `installed` as the default, or `no` when nothing is installed.
 
-**(f) Show the roles and confirm.** Show every role with its selector, marking any selector step 1 did not confirm as needing a choice. Ask whether to accept as-is or change specific roles, offering the detected selectors as the options. Prefer `ask` over free text. `pstack-panel-1` through `pstack-panel-4` are four independent roles and one `pstack-panel-<n>` agent runs per configured panel entry, so their values set how many models a review panel actually spans. Give them four different families when the account carries four. Collapsing them to fewer weakens the panel, so say so rather than letting it happen silently.
+- `yes — Copilot engine` (no secret: it bills the repo's Copilot plan through the workflow token)
+- `yes — Claude engine` (needs an `ANTHROPIC_API_KEY` repo secret)
+- `no`
+
+An answer may also name a model or a trigger word, for example "copilot, gpt-5.6-luna, /ai-review". Step 7 passes those as `--model` and `--command`. When `detect` listed `conflicts`, another workflow already answers that trigger. Name those files in the question and make `no` or a different trigger the default, because two reviewers on one trigger approve twice.
+
+**(f) Apply it.** `unlimited` leaves every effort where it already is. `large`, `medium`, and `small` set the effort on every real selector to `xhigh`, `high`, or `medium`, panel entries included. `pstack-watch` is the exception: it always takes the account's cheapest fast model that can run shell (haiku-class) at `medium`, whatever the budget, because it mostly waits on a script. The ladder is `off` < `minimal` < `low` < `medium` < `high` < `xhigh` < `max`. When the target level is not in that model's detected `thinking` array, take the highest detected level at or below the target. Never invent a level, and probe whatever you choose as step 1 describes. On a re-run, keep any role you changed by family.
+
+**(g) Show the roles and confirm.** Show every role with its selector, marking any selector step 1 did not confirm as needing a choice. Ask whether to accept as-is or change specific roles, offering the detected selectors as the options. Prefer `ask` over free text. `pstack-panel-1` through `pstack-panel-4` are four independent roles and one `pstack-panel-<n>` agent runs per configured panel entry, so their values set how many models a review panel actually spans. Give them four different families when the account carries four. Collapsing them to fewer weakens the panel, so say so rather than letting it happen silently.
 
 ### 4. Validate
 
@@ -133,6 +141,18 @@ A project config overrides the global one, so `off` wins inside this repo even w
 
 Re-read the file you wrote and show the user the final `modelRoles.pstack-*` values as they now stand in it, naming the file's path. Confirm each `agentModelOverrides` value you wrote is the alias, and say so if one is not. Tell them the roles apply to new task dispatches, since dispatch reloads settings before it resolves an agent. Re-running this skill updates them. Run `lessons.mjs config` again and show what it reports for lesson memory.
 
-### 7. Offer a verification skill (optional)
+### 7. Install automated PR review
+
+Skip this step when step 3(e) was left out. When the answer was `no`, write nothing. If the workflow is already installed, leave it and name the removal: `gh aw remove pr-review`, then delete `.github/workflows/pr-review-status.yml`.
+
+On a yes, run `node skill://setup-pstack/scripts/pr-review.mjs install --engine <copilot|claude> [--model <id>] [--command <word>]`. It installs the `gh aw` extension when missing, writes `.github/workflows/pr-review.md` and `pr-review-status.yml`, compiles the lock file, and turns on the repo setting that lets GitHub Actions approve pull requests. Re-running rewrites the same files, so it also changes the engine, model, or trigger. Report what it returned:
+
+- `canApproveError` means an organization policy blocks Actions from approving. An org owner must allow it under the org's Settings → Actions → General. Until then the review runs but cannot approve.
+- `missingSecrets` lists groups of alternatives, and one secret per group is enough. Tell the user to run `gh aw secrets bootstrap` or `gh secret set <NAME>` in their own terminal. Never ask for a secret value or pass one through the chat.
+- `approvalBlockers` lists each review setting on the default branch that the bot's single approval cannot satisfy: more than one required approval, a code-owner review, or required reviewers for some paths. When it is empty and `approvalKnown` is true, the bot's approval alone makes a PR mergeable once CI passes. When it is not empty, name each reason and ask whether to relax those settings so the bot's approval is enough. Say that this lowers the repo's review bar. On yes, run `node skill://setup-pstack/scripts/pr-review.mjs allow-bot-approval`. It lowers only the blocking settings in repository rulesets and classic protection, keeps every other rule, and reports what it changed, what it `skipped` with the reason (organization rulesets need an org owner), and the blockers that remain. `approvalKnown: false` means classic protection was unreadable without admin access, so call the answer unknown.
+
+The workflow fires only from the default branch. Commit the returned `files` on a new branch and open a ready PR. Tell the user the review reads `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `.github/copilot-instructions.md`, and `.github/instructions/*.instructions.md` when present. Repo-specific review rules go in `.github/review-rules.md`, which needs no recompile. A push to the PR removes `ready-for-merge`, because the approval no longer covers the head. A PR that GitHub Actions opened is refused, because GitHub does not let the bot review its own PR.
+
+### 8. Offer a verification skill (optional)
 
 Check whether the project has a way to drive the real app for proof (a `verify-*` skill, or an existing harness). If not, offer once: "want a project-local verification skill, so agents can drive the app the way a user does and prove changes work? I can generate one with `/skill:create-verification-skill`." On yes, read `skill://create-verification-skill` and follow it (resolves wherever pstack is installed: project, user, or plugin). On no, move on without pushing.
