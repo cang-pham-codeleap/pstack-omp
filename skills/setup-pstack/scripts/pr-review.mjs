@@ -92,30 +92,89 @@ export function install(cwd, opts) {
       canApproveError = String(err.stderr ?? err.message).trim();
     }
   }
-  const branch = sh('gh', ['repo', 'view', '--json', 'defaultBranchRef', '--jq', '.defaultBranchRef.name'], cwd);
-  const rules = branch ? sh('gh', ['api', `repos/${state.repo}/rules/branches/${branch}`], cwd) : null;
-  const classic = branch ? spawnSync('gh', ['api', `repos/${state.repo}/branches/${branch}/protection/required_pull_request_reviews`], { cwd, encoding: 'utf8' }) : null;
-  const protection = classic?.status === 0 ? classic.stdout : /Branch not protected|not enabled/.test(classic?.stderr ?? '') ? NO_CLASSIC_REVIEWS : null;
   return {
     repo: state.repo,
     files: [...[FILES.workflow, FILES.lock, FILES.status].map(f => `${WORKFLOWS}/${f}`), '.github/aw/actions-lock.json', '.gitattributes'].filter(f => existsSync(join(cwd, f))),
     missingSecrets: needed.filter(group => !group.some(s => present.has(s))),
     canApprove, canApproveError, conflicts: state.conflicts,
-    codeOwnerReviewRequired: requiresCodeOwnerReview({ rules, protection }),
+    ...approvalBlockers(readReviewRules(cwd, state.repo)),
   };
 }
 
 export const NO_CLASSIC_REVIEWS = 'none';
 
-// The bot's approval never satisfies a code-owner requirement, so the PR stays blocked after APPROVE.
-// `protection` is the classic required_pull_request_reviews JSON, NO_CLASSIC_REVIEWS when GitHub says none is set, or null when unreadable (needs admin).
-export function requiresCodeOwnerReview({ rules, protection }) {
-  const parse = text => { try { return text ? JSON.parse(text) : null; } catch { return null; } };
-  const rulesets = parse(rules);
-  if (Array.isArray(rulesets) && rulesets.some(r => r.type === 'pull_request' && r.parameters?.require_code_owner_review === true)) return true;
-  const classic = protection === NO_CLASSIC_REVIEWS ? { require_code_owner_reviews: false } : parse(protection);
-  if (classic?.require_code_owner_reviews === true) return true;
-  return Array.isArray(rulesets) && classic ? false : null;
+// The default branch's review rules: its rulesets (any reader can see them) and classic protection (admins only).
+function readReviewRules(cwd, repo) {
+  const branch = sh('gh', ['repo', 'view', '--json', 'defaultBranchRef', '--jq', '.defaultBranchRef.name'], cwd);
+  if (!branch) return { branch: null, rules: null, classic: null };
+  const rules = JSON.parse(sh('gh', ['api', `repos/${repo}/rules/branches/${branch}`], cwd) ?? 'null');
+  const res = spawnSync('gh', ['api', `repos/${repo}/branches/${branch}/protection/required_pull_request_reviews`], { cwd, encoding: 'utf8' });
+  const classic = res.status === 0 ? JSON.parse(res.stdout) : /Branch not protected|not enabled/.test(res.stderr ?? '') ? NO_CLASSIC_REVIEWS : null;
+  return { branch, rules, classic };
+}
+
+// Why the bot's single approval would not make a PR mergeable under one source's review settings.
+function reviewReasons(count, codeOwners, requiredReviewers) {
+  return [
+    ...(count > 1 ? [`requires ${count} approvals; the bot gives one`] : []),
+    ...(codeOwners ? ['requires a code-owner review, which the bot never satisfies'] : []),
+    ...(requiredReviewers?.length ? ['requires specific reviewers for some paths'] : []),
+  ];
+}
+
+// approvalKnown is false when classic protection was unreadable, so an empty list is not proof.
+export function approvalBlockers({ rules, classic }) {
+  const blockers = [];
+  for (const rule of Array.isArray(rules) ? rules : []) {
+    if (rule.type !== 'pull_request') continue;
+    const p = rule.parameters ?? {};
+    const reasons = reviewReasons(p.required_approving_review_count ?? 0, p.require_code_owner_review, p.required_reviewers);
+    if (reasons.length) blockers.push({ source: 'ruleset', rulesetId: rule.ruleset_id, editable: rule.ruleset_source_type === 'Repository', reasons });
+  }
+  if (classic && classic !== NO_CLASSIC_REVIEWS) {
+    const reasons = reviewReasons(classic.required_approving_review_count ?? 0, classic.require_code_owner_reviews, []);
+    if (reasons.length) blockers.push({ source: 'classic', editable: true, reasons });
+  }
+  return { approvalBlockers: blockers, approvalKnown: Array.isArray(rules) && classic !== null };
+}
+
+// Review settings under which the bot's one approval is enough; everything else in the rule is kept.
+export function relaxReviewParams(params) {
+  return {
+    ...params,
+    required_approving_review_count: Math.min(params.required_approving_review_count ?? 0, 1),
+    require_code_owner_review: false,
+    ...('required_reviewers' in params ? { required_reviewers: [] } : {}),
+  };
+}
+
+const ghJson = (args, cwd, body) => execFileSync('gh', ['api', ...args, ...(body ? ['--input', '-'] : [])], { cwd, encoding: 'utf8', input: body ? JSON.stringify(body) : undefined, stdio: ['pipe', 'pipe', 'pipe'] });
+
+// Relaxes only the blocking review settings, in repo rulesets and classic protection. Organization rulesets are left alone.
+export function allowBotApproval(cwd) {
+  const { repo } = detect(cwd);
+  if (!repo) throw new Error('gh cannot see this repository; run `gh auth login` and retry');
+  const read = readReviewRules(cwd, repo);
+  const { approvalBlockers: blockers } = approvalBlockers(read);
+  const changed = [];
+  const skipped = [];
+  for (const blocker of blockers) {
+    if (!blocker.editable) { skipped.push({ ...blocker, why: 'organization ruleset; an org owner must change it' }); continue; }
+    try {
+      if (blocker.source === 'ruleset') {
+        const set = JSON.parse(ghJson([`repos/${repo}/rulesets/${blocker.rulesetId}`], cwd));
+        const rules = set.rules.map(r => (r.type === 'pull_request' ? { ...r, parameters: relaxReviewParams(r.parameters ?? {}) } : r));
+        ghJson(['-X', 'PUT', `repos/${repo}/rulesets/${blocker.rulesetId}`], cwd, { name: set.name, target: set.target, enforcement: set.enforcement, conditions: set.conditions, bypass_actors: set.bypass_actors, rules });
+      } else {
+        ghJson(['-X', 'PATCH', `repos/${repo}/branches/${read.branch}/protection/required_pull_request_reviews`], cwd,
+          { required_approving_review_count: Math.min(read.classic.required_approving_review_count, 1), require_code_owner_reviews: false });
+      }
+      changed.push(blocker);
+    } catch (err) {
+      skipped.push({ ...blocker, why: String(err.stderr ?? err.message).trim() });
+    }
+  }
+  return { repo, changed, skipped, ...approvalBlockers(readReviewRules(cwd, repo)) };
 }
 
 function parseArgs(argv) {
@@ -132,8 +191,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   try {
     const [cmd, ...rest] = process.argv.slice(2);
     const { cwd = process.cwd(), ...opts } = parseArgs(rest);
-    const out = cmd === 'detect' ? detect(cwd, opts.command) : cmd === 'install' ? install(cwd, opts) : null;
-    if (!out) throw new Error('usage: pr-review.mjs detect|install [--engine copilot|claude] [--model M] [--command review] [--cwd DIR]');
+    const out = cmd === 'detect' ? detect(cwd, opts.command) : cmd === 'install' ? install(cwd, opts) : cmd === 'allow-bot-approval' ? allowBotApproval(cwd) : null;
+    if (!out) throw new Error('usage: pr-review.mjs detect|install|allow-bot-approval [--engine copilot|claude] [--model M] [--command review] [--cwd DIR]');
     console.log(JSON.stringify(out, null, 2));
   } catch (err) {
     console.error(err.message);

@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { detect, NO_CLASSIC_REVIEWS, parseInstalled, render, requiredSecrets, requiresCodeOwnerReview } from './pr-review.mjs';
+import { approvalBlockers, detect, NO_CLASSIC_REVIEWS, parseInstalled, relaxReviewParams, render, requiredSecrets } from './pr-review.mjs';
 
 const repoWithRemote = url => {
   const dir = mkdtempSync(join(tmpdir(), 'pr-review-'));
@@ -164,21 +164,35 @@ describe('stale approval label', () => {
   });
 });
 
-describe('requiresCodeOwnerReview', () => {
-  const ruleset = require => JSON.stringify([{ type: 'pull_request', parameters: { require_code_owner_review: require } }]);
+describe('approvalBlockers', () => {
+  const prRule = (parameters, source = 'Repository') => ({ type: 'pull_request', ruleset_id: 9, ruleset_source_type: source, parameters });
 
-  it('reports a code-owner requirement from a ruleset or classic protection', () => {
-    expect(requiresCodeOwnerReview({ rules: ruleset(true), protection: null })).toBe(true);
-    expect(requiresCodeOwnerReview({ rules: '[]', protection: '{"require_code_owner_reviews":true}' })).toBe(true);
+  it('finds nothing to block under one required approval without code owners, as on pstack-omp and jtl', () => {
+    const rules = [{ type: 'deletion', ruleset_id: 9 }, prRule({ required_approving_review_count: 1, require_code_owner_review: false, required_reviewers: [] })];
+    expect(approvalBlockers({ rules, classic: NO_CLASSIC_REVIEWS })).toEqual({ approvalBlockers: [], approvalKnown: true });
   });
 
-  it('reports false only when both rulesets and classic protection are known to be clear', () => {
-    expect(requiresCodeOwnerReview({ rules: ruleset(false), protection: NO_CLASSIC_REVIEWS })).toBe(false);
-    expect(requiresCodeOwnerReview({ rules: '[]', protection: '{"require_code_owner_reviews":false}' })).toBe(false);
+  it('names each ruleset and classic setting the single bot approval cannot satisfy', () => {
+    const rules = [prRule({ required_approving_review_count: 2, require_code_owner_review: true, required_reviewers: [{ file_patterns: ['*'] }] }, 'Organization')];
+    expect(approvalBlockers({ rules, classic: { required_approving_review_count: 1, require_code_owner_reviews: true } })).toEqual({
+      approvalBlockers: [
+        { source: 'ruleset', rulesetId: 9, editable: false, reasons: ['requires 2 approvals; the bot gives one', 'requires a code-owner review, which the bot never satisfies', 'requires specific reviewers for some paths'] },
+        { source: 'classic', editable: true, reasons: ['requires a code-owner review, which the bot never satisfies'] },
+      ],
+      approvalKnown: true,
+    });
   });
 
-  it('reports unknown when classic protection could not be read', () => {
-    expect(requiresCodeOwnerReview({ rules: '[]', protection: null })).toBeNull();
-    expect(requiresCodeOwnerReview({ rules: null, protection: NO_CLASSIC_REVIEWS })).toBeNull();
+  it('marks the answer unknown when classic protection could not be read', () => {
+    expect(approvalBlockers({ rules: [], classic: null })).toEqual({ approvalBlockers: [], approvalKnown: false });
+  });
+});
+
+describe('relaxReviewParams', () => {
+  it('lowers only the settings that block a single bot approval and keeps the rest', () => {
+    expect(relaxReviewParams({ required_approving_review_count: 3, require_code_owner_review: true, required_reviewers: [{ x: 1 }], dismiss_stale_reviews_on_push: true }))
+      .toEqual({ required_approving_review_count: 1, require_code_owner_review: false, required_reviewers: [], dismiss_stale_reviews_on_push: true });
+    expect(relaxReviewParams({ required_approving_review_count: 0, require_code_owner_review: true }))
+      .toEqual({ required_approving_review_count: 0, require_code_owner_review: false });
   });
 });
