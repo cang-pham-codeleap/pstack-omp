@@ -16,6 +16,7 @@ pstack is installed as a Claude Code plugin. Its skills are written for omp (oh-
 - `isolated: true` → `isolation: "worktree"`.
 - `agent://<id>` (parked subagent) → `SendMessage` to that agent, or read its transcript.
 - Long-running background `task` + `hub wait` / `hub jobs` heartbeat → `Agent` or `Bash` with `run_in_background: true`; wait for the completion notification, use `Monitor` to watch a condition.
+- `bash` with `timeout: 0` (the Watcher's `watch-pr` call in `references/watcher-brief.md`) → `Bash` with `run_in_background: true` and no `timeout`; wait for the completion notification. `write proc://<id>/kill` → `KillShell` / stop the Agent.
 - `ask` → `AskUserQuestion`.
 - `browser` → a browser MCP server (e.g. Playwright) if one is connected; otherwise tell the user the verification step needs one.
 - `tab.recordStart` / `tab.recordStop` (the **video-evidence** skill) → Playwright MCP started with `--save-video=<width>x<height>` (WebM in its output dir), or a Playwright script with `browser.newContext({ recordVideo: { dir, size } })`. Load `scripts/overlay.js` with `page.addInitScript({ path })`. Build the storyboard from the WebM with the same `ffmpeg` line. Puppeteer's `page.waitForFileChooser({ timeout })` → Playwright's `page.waitForEvent("filechooser", { timeout })`.
