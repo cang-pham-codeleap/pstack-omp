@@ -2,6 +2,8 @@
 
 **You own the design. Plan, review, verify.** Delegate implementation. Stay in the lead.
 
+**Ticket gate.** When the work comes from a ticket, the Ticket playbook (`playbooks/ticket.md`) runs first and must end with the human's confirmation. Write no code in the turn the ticket arrives.
+
 1. `how` over the affected subsystem.
 2. `architect` for parallel design exploration.
 3. Write the throughput checkpoint as four todo items. A dimension that genuinely does not apply (single file, no fan-out) keeps its item with `n/a: <reason>` rather than being dropped:
