@@ -163,6 +163,62 @@ describe('match', () => {
   });
 });
 
+describe('match --query', () => {
+  const ids = (...args) => lessons('match', '--json', ...args).lessons.map(l => l.id);
+
+  it('ranks by text relevance over votes and drops lessons with no shared term', () => {
+    enable();
+    const popular = add('Cache invalidation on logout', '--prevent', 'Clear the token cache');
+    lessons('vote', popular.id, 'up', popular.id, 'up');
+    const relevant = add('Migration order breaks the token cache', '--prevent', 'Run prisma migrations before seeding');
+    add('Button spacing in the sidebar');
+    expect(ids('--query', 'prisma migration token')).toEqual([relevant.id, popular.id]);
+  });
+
+  it('matches prevent text and tags, ignores diacritics and case', () => {
+    enable();
+    const viaPrevent = add('Opening loses the viewer', '--prevent', 'Mở đầu bằng tình huống trước');
+    const viaTag = add('Long spoken sentences', '--tags', 'Zalo,Webhook');
+    expect(ids('--query', 'mo dau tinh huong')).toEqual([viaPrevent.id]);
+    expect(ids('--query', 'ZALO')).toEqual([viaTag.id]);
+  });
+
+  it('still applies kind, path and retired filters', () => {
+    enable();
+    const api = add('Retry the webhook queue', '--paths', 'src/api/**');
+    add('Retry the webhook from the UI', '--paths', 'src/ui/**');
+    const gone = add('Retry webhook with backoff then give up');
+    lessons('retire', gone.id, '--reason', 'code removed');
+    lessons('add', '--kind', 'intake-gap', '--lesson', 'Ask which webhook retries', '--evidence', 'user');
+    expect(ids('--kind', 'root-cause', '--query', 'webhook retry', '--paths', 'src/api/x.ts')).toEqual([api.id]);
+  });
+
+  it('ignores filler words so a prompt matches only on its content words', () => {
+    enable();
+    const sidebar = add('The sidebar collapses on the settings page');
+    add('Fix the cron so it runs in the right timezone');
+    expect(ids('--query', 'fix the button in the sidebar')).toEqual([sidebar.id]);
+    expect(ids('--query', 'can you help me with this')).toEqual([]);
+    expect(ids('--query', 'sửa giúp tôi cái này nhé')).toEqual([]);
+  });
+
+  it('reaches an English lesson from a Vietnamese prompt through its Vietnamese tags', () => {
+    enable();
+    const zalo = add('Workers ran with selfListen false so self-sent messages never archived', '--tags', 'zalo,tin nhắn,bán hàng');
+    expect(ids('--query', 'nhân viên không thấy tin nhắn của nhau')).toEqual([zalo.id]);
+    expect(ids('--query', 'bán hàng')).toEqual([zalo.id]);
+    expect(ids('--query', 'bạn')).toEqual([]);
+  });
+
+  it('treats FTS syntax as plain text and returns nothing for a query with no words', () => {
+    enable();
+    const hit = add('NOT a bug: the cron runs twice');
+    expect(ids('--query', 'cron "AND* NOT( -twice:')).toEqual([hit.id]);
+    expect(ids('--query', '?? !! --')).toEqual([]);
+    expect(lessons('match', '--query', '...')).toBe('');
+  });
+});
+
 describe('text output', () => {
   const spawn = (...args) => spawnSync('node', [script, ...args, '--cwd', repo], { env: { ...process.env, PSTACK_HOME: home }, encoding: 'utf8' });
   const A = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta', 'iota', 'kappa'];
@@ -196,6 +252,15 @@ describe('text output', () => {
     expect(spawn('list').stdout).toBe('');
     add('Something');
     expect(spawn('match').stdout.endsWith('\n')).toBe(true);
+  });
+
+  it('runs --query under node with a clean stderr', () => {
+    enable();
+    const { id } = add('Prisma migration order');
+    const res = spawn('match', '--query', 'prisma');
+    expect(res.status).toBe(0);
+    expect(res.stdout.startsWith(`${id} `)).toBe(true);
+    expect(res.stderr).toBe('');
   });
 
   it('caps at --limit (default 5) and reports the remainder', () => {
