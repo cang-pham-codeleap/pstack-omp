@@ -5,7 +5,7 @@ pstack is installed as a Claude Code plugin. Its skills are written for omp (oh-
 ## Skills and files
 - `/skill:<name>` → `/pstack:<name>` (user-typed command).
 - `skill://<name>` → Read `{{PSTACK_ROOT}}/skills/<name>/SKILL.md`. Use Read, not the Skill tool: most pstack skills set `disable-model-invocation`.
-- `skill://<name>/<path>` → `{{PSTACK_ROOT}}/skills/<name>/<path>`, e.g. `bun {{PSTACK_ROOT}}/skills/poteto-mode/scripts/orch/orch.ts`, `node {{PSTACK_ROOT}}/skills/poteto-mode/scripts/check-plan.mjs <plan.md>`.
+- `skill://<name>/<path>` → `{{PSTACK_ROOT}}/skills/<name>/<path>`, e.g. `bun {{PSTACK_ROOT}}/skills/poteto-mode/scripts/watch-pr/cli.ts`, `node {{PSTACK_ROOT}}/skills/poteto-mode/scripts/check-plan.mjs <plan.md>`.
 - Relative paths inside a skill (`playbooks/x.md`, `references/y.md`) resolve from that skill's directory under `{{PSTACK_ROOT}}/skills/`.
 - `/skill:<name>` inside a prompt for an omp worker (the **omp-orchestrate** skill's tasks.json) → keep it literal. The omp worker expands it, not you.
 
@@ -53,8 +53,10 @@ Never start a sub session on Haiku. Never pick Fable unless the user names it. A
 
 ## Config and paths
 - `~/.omp/agent/config.yml`, `.omp/config.yml`, `modelRoles.pstack-*`, `task.agentModelOverrides`, `task.eager`, `skills.enableSkillCommands` → not used. Role models and efforts live in the `model:` and `effort:` fields of `{{PSTACK_ROOT}}/claude/agents/*.md`; the Model routing table overrides `model` per spawn.
+- `task.enableEffort`, the `task` `effort` parameter (`"hi"` or `"lo"`) → not used. Role effort lives in each agent's `effort:` field; do not override it per spawn.
+- `hub wait` / `hub jobs` hourly heartbeat for autopilot and shipping ticks → no `/loop 1h` equivalent needed. Use a background Agent, or `/loop` or `ScheduleWakeup` only if the user runs a loop.
 - `task.maxConcurrency` → no Claude Code setting. Keep the playbook's own live-agent limit as written.
-- `/skill:setup-pstack` → omp only, except lesson memory and PR review. On Claude Code, confirm `/agents` lists the `pstack:*` agents and point the user to `claude/agents/*.md` to change role models. Do not write omp config. Do ask step 3(c), the lesson-memory question, and write it with `node {{PSTACK_ROOT}}/skills/lessons/scripts/lessons.mjs configure` as step 5 shows. Skip 3(d). Ask step 3(e) and run step 7 as written, with `node {{PSTACK_ROOT}}/skills/setup-pstack/scripts/pr-review.mjs`.
+- `/skill:setup-pstack` → omp only, except lesson memory and PR review. On Claude Code, confirm `/agents` lists the `pstack:*` agents and point the user to `claude/agents/*.md` to change role models. Do not write omp config. Do ask step 3(c), the lesson-memory question, and write it with `node {{PSTACK_ROOT}}/skills/lessons/scripts/lessons.mjs configure` as step 5 shows. Skip 3(d). Ask step 3(e) and run step 7 as written, with `node {{PSTACK_ROOT}}/skills/setup-pstack/scripts/pr-review.mjs`. Run steps 8 and 9, the verification-skill offers, as written.
 - `memory.backend`, `autolearn.enabled`, omp's `learn` tool → no plugin equivalent. Claude Code's own auto memory is on by default and the plugin cannot change it. pstack lessons (`.pstack/`, `~/.pstack/`) are the same files on both harnesses.
 - `OMPCODE=1` → omp sets it in every shell; Claude Code does not. Both harnesses set `CLAUDECODE=1`, so only `OMPCODE` tells them apart.
 - `omp models`, `omp --model ... -p` → `claude --model <id> -p "ok"` to smoke-test a model.

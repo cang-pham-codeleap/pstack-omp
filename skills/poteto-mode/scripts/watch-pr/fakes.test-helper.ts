@@ -8,7 +8,9 @@ import type {
   PrReview,
   PullRequestFacts,
   Repository,
+  RawReviewThread,
   ReviewThread,
+  ReviewThreadPage,
   ShipActivity,
   RollupPage,
   WorkflowRun,
@@ -20,6 +22,7 @@ export interface FakeReaderOptions {
   readonly fastPath?: ChecksFastPath;
   readonly rollupPages?: readonly RollupPage[];
   readonly threads?: readonly ReviewThread[];
+  readonly threadPages?: readonly ReviewThreadPage[];
   readonly commitRollups?: readonly CommitRollup[];
   readonly reviews?: readonly PrReview[];
   readonly openPullRequests?: readonly OpenPullRequest[];
@@ -27,6 +30,15 @@ export interface FakeReaderOptions {
   readonly current?: PrContext;
   readonly workflowRuns?: readonly WorkflowRun[];
   readonly shipActivity?: ShipActivity;
+}
+
+function toRawThread(thread: ReviewThread): RawReviewThread {
+  return {
+    id: thread.id,
+    isOutdated: thread.isOutdated,
+    firstComment: thread.firstComment,
+    resolved: false,
+  };
 }
 
 export function passingCheck(name = "ci"): Check {
@@ -84,6 +96,7 @@ export function fakeReader(
     isDraft: false,
   };
   let page = 0;
+  let threadPage = 0;
   return {
     calls,
     async originRepo() {
@@ -112,9 +125,12 @@ export function fakeReader(
       calls.push(`checkRollupPage:${after ?? "null"}`);
       return options.rollupPages?.[page++] ?? { checks: [], endCursor: null };
     },
-    async reviewThreads() {
-      calls.push("reviewThreads");
-      return options.threads ?? [];
+    async reviewThreadPage(_requested, after) {
+      calls.push(`reviewThreadPage:${after ?? "null"}`);
+      return options.threadPages?.[threadPage++] ?? {
+        threads: (options.threads ?? []).map(toRawThread),
+        endCursor: null,
+      };
     },
     async commitRollups() {
       calls.push("commitRollups");
