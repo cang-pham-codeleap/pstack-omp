@@ -36,9 +36,9 @@ Ask (a), (b), (c), (d), and (e) together in one `ask` call, as one batch, so the
 - `this project only — write .omp/config.yml` (recommended: leaves every other project's settings alone)
 - `every project on this machine — write ~/.omp/agent/config.yml`
 
-**(b) Ask for a budget.** Offer these four options with these exact labels, and name the current budget when the config records one.
+**(b) Ask for a budget.** Offer these four options with these exact labels, and name the current budget when the config records one. With no recorded budget, say that `large` matches the defaults.
 
-- `unlimited — keep max`
+- `unlimited — max reasoning`
 - `large — xhigh reasoning`
 - `medium — high reasoning`
 - `small — medium reasoning`
@@ -63,7 +63,7 @@ Global lessons, such as standing preferences, always stay in `~/.pstack/` on thi
 
 An answer may also name a model or a trigger word, for example "copilot, gpt-5.6-luna, /ai-review". Step 7 passes those as `--model` and `--command`. When `detect` listed `conflicts`, another workflow already answers that trigger. Name those files in the question and make `no` or a different trigger the default, because two reviewers on one trigger approve twice.
 
-**(f) Apply it.** `unlimited` leaves every effort where it already is. `large`, `medium`, and `small` set the effort on every real selector to `xhigh`, `high`, or `medium`, panel entries included. `pstack-watch` is the exception: it always takes the account's cheapest fast model that can run shell (haiku-class) at `medium`, whatever the budget, because it mostly waits on a script. The ladder is `off` < `minimal` < `low` < `medium` < `high` < `xhigh` < `max`. When the target level is not in that model's detected `thinking` array, take the highest detected level at or below the target. Never invent a level, and probe whatever you choose as step 1 describes. On a re-run, keep any role you changed by family.
+**(f) Apply it.** `unlimited`, `large`, `medium`, and `small` set the effort on every real selector to `max`, `xhigh`, `high`, or `medium`, panel entries included. `pstack-watch` is the exception: it always takes the account's cheapest fast model that can run shell (haiku-class) at `medium`, whatever the budget, because it mostly waits on a script. The ladder is `off` < `minimal` < `low` < `medium` < `high` < `xhigh` < `max`. When the target level is not in that model's detected `thinking` array, take the highest detected level at or below the target. Never invent a level, and probe whatever you choose as step 1 describes. On a re-run, keep any role you changed by family.
 
 **(g) Show the roles and confirm.** Show every role with its selector, marking any selector step 1 did not confirm as needing a choice. Ask whether to accept as-is or change specific roles, offering the detected selectors as the options. Prefer `ask` over free text. `pstack-panel-1` through `pstack-panel-4` are four independent roles and one `pstack-panel-<n>` agent runs per configured panel entry, so their values set how many models a review panel actually spans. Give them four different families when the account carries four. Collapsing them to fewer weakens the panel, so say so rather than letting it happen silently.
 
@@ -156,3 +156,7 @@ The workflow fires only from the default branch. Commit the returned `files` on 
 ### 8. Offer a verification skill (optional)
 
 Check whether the project has a way to drive the real app for proof (a `verify-*` skill, or an existing harness). If not, offer once: "want a project-local verification skill, so agents can drive the app the way a user does and prove changes work? I can generate one with `/skill:create-verification-skill`." On yes, read `skill://create-verification-skill` and follow it (resolves wherever pstack is installed: project, user, or plugin). On no, move on without pushing.
+
+### 9. Offer a formal verification skill (optional)
+
+Check whether the project already has a formal verification skill (a project skill that runs a model checker, a proof, or another verifier against the code). If not, offer once: "want a formal verification skill, so agents can prove a key property of your code holds in every case in scope, not only the cases tests reach? I can generate one with `/skill:create-formal-verification-skill`." On yes, read `skill://create-formal-verification-skill` and follow it (resolves wherever pstack is installed: project, user, or plugin). On no, move on without pushing.
