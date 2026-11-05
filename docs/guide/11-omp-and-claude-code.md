@@ -36,8 +36,9 @@ The skills stay in omp syntax (`skill://`, `task`, `hub`). On Claude Code, a ses
 | Plugin-root path | `skill://` resolves it, so no path is needed | `${CLAUDE_PLUGIN_ROOT}` in hooks and MCP only, **not** in the Bash tool environment |
 | Agents | plugin `agents/*.md`; `name`, `description`, `tools`, `spawns`, `model` (alias list like `"@pstack-code, @task"`), `thinking`, `blocking`, `autoloadSkills` | plugin `agents/` or the manifest `agents` list of files; `name` (lowercase-hyphen), `description`, `tools`, `model` (`inherit`/`opus`/`sonnet`/`fable`/`haiku`/id), `effort`, `skills`, `isolation`. `hooks`, `mcpServers`, `permissionMode` are refused in plugin agents |
 | Agent id at spawn | `agent: "pstack-code"` | `subagent_type: "pstack:pstack-code"` |
-| Role models | `modelRoles.pstack-*` plus `task.agentModelOverrides` in `~/.omp/agent/config.yml`, written by `/skill:setup-pstack` | the `model:` field in `claude/agents/*.md`. No per-user role config |
-| Subagent tool | `task` (batch `tasks[]`, `isolated: true`, max 8 concurrent) | `Agent` (parallel calls in one message, `isolation: "worktree"`) |
+| Role models | `modelRoles.pstack-*` plus `task.agentModelOverrides` in `~/.omp/agent/config.yml`, written by `/skill:setup-pstack` | the `model:` and `effort:` fields in `claude/agents/*.md`, overridden per spawn by the Model routing table in `claude/harness-map.md` |
+| Subagent tool | `task` (batch `tasks[]`, `isolated: true`, max 8 concurrent) | `Agent` (parallel calls in one message, `isolation: "worktree"`). Subagents nest up to `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` layers (default 3) |
+| Heavy roles | `task` owners and sub-coordinators | on the desktop app, linked sub sessions through `mcp__ccd_session__start_session`; elsewhere `Agent` |
 | Background work | background `task` and `hub wait` / `hub jobs` | `run_in_background: true` on `Agent`/`Bash`, completion notifications, `Monitor` |
 | Other tools | lowercase: `read`, `edit`, `write`, `bash`, `grep`, `find`, `ask`, `browser`, `manage_skill` | PascalCase: `Read`, `Edit`, `Write`, `Bash`, `Grep`, `Glob`, `AskUserQuestion`; no built-in browser; no `manage_skill` |
 | Hooks | TS/JS factories in `hooks/pre|post/`, `pi.on("tool_call", …)` | `hooks/hooks.json` shell commands (`SessionStart`, `PreToolUse`, `PostToolUse`, …) |
@@ -64,5 +65,6 @@ The skills stay in omp syntax (`skill://`, `task`, `hub`). On Claude Code, a ses
 ## Known gaps on Claude Code
 
 - No `browser` tool. Visual verification needs a browser MCP server.
-- Role models are fixed per file. `/skill:setup-pstack` configures omp only.
+- Role models are set per file, and the Model routing table overrides `model` per spawn. `/skill:setup-pstack` configures omp only.
+- Sub sessions need the desktop app. The CLI has no tool to start a linked session, so heavy roles run as `Agent` there.
 - Most skills set `disable-model-invocation`, so they don't show up in the model's skill list. The user types `/pstack:<name>`, or the model reads the file through the map.
