@@ -1,6 +1,7 @@
 ---
 name: omp-orchestrate
-description: "Run a task in separate omp (oh-my-pi) worker processes on a model the user names, then watch, steer, abort, and verify them. Use when the user asks to use omp, run a task on a named model or provider through omp, or hand work to omp workers (\"use omp with gpt-6.1 terra on copilot\", \"dùng omp với model ... với copilot\", \"chạy omp\", \"giao cho omp\")."
+description: 'Run a task in separate omp (oh-my-pi) worker processes on a model the user names, then watch, steer, abort, and verify them. Use when the user asks to use omp, run a task on a named model or provider through omp, or hand work to omp workers ("use omp with gpt-6.1 terra on copilot", "dùng omp với model ... với copilot", "chạy omp", "giao cho omp").'
+disable-model-invocation: true
 ---
 
 # omp orchestrate
@@ -50,7 +51,16 @@ Report: <what to write to {{REPORT}}, or the final message's shape>
 Write the tasks to a scratch `tasks.json`, one task per independent slice.
 
 ```json
-[{"id":"impl","model":"github-copilot/gpt-6.1-terra","thinking":"high","mode":"write","cwd":".","prompt":"<the brief>"}]
+[
+  {
+    "id": "impl",
+    "model": "github-copilot/gpt-6.1-terra",
+    "thinking": "high",
+    "mode": "write",
+    "cwd": ".",
+    "prompt": "<the brief>"
+  }
+]
 ```
 
 - `{{REPORT}}` expands to the report path. A review brief asks for findings with `file:line` evidence there.
@@ -59,10 +69,10 @@ Write the tasks to a scratch `tasks.json`, one task per independent slice.
 
 The supervisor answers every approval. Anything it denies prints as `DENIED` in `watch`.
 
-| Mode | Allowed | Denied |
-|---|---|---|
-| `review` | reads, search, read-only shell, writing its report | edits, git writes, installs, `gh`, network |
-| `write` | edits inside `cwd`, `git add`, `git commit`, other shell | `git push`, `gh`, `rm -rf`, `sudo`, `curl`, `wget`, `git reset --hard`, `git clean` |
+| Mode     | Allowed                                                  | Denied                                                                              |
+| -------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `review` | reads, search, read-only shell, writing its report       | edits, git writes, installs, `gh`, network                                          |
+| `write`  | edits inside `cwd`, `git add`, `git commit`, other shell | `git push`, `gh`, `rm -rf`, `sudo`, `curl`, `wget`, `git reset --hard`, `git clean` |
 
 ## 3. Run
 
