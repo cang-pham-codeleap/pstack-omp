@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type CliRuntime, main, parseArgs } from "./cli.ts";
 import { fakeReader, failedCheck } from "./fakes.test-helper.ts";
-import { WatcherQueryError, parseReviewThreads } from "./github.ts";
+import {
+  WatcherQueryError,
+  buildReviewThreads,
+  parseReviewThreadPage,
+} from "./github.ts";
 import {
   canonicalReviewer,
   readSnapshot,
@@ -567,8 +571,19 @@ describe("review thread triage fields", () => {
     },
   });
   const response = (...nodes: unknown[]) => ({
-    data: { repository: { pullRequest: { reviewThreads: { nodes } } } },
+    data: {
+      repository: {
+        pullRequest: {
+          reviewThreads: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes,
+          },
+        },
+      },
+    },
   });
+  const parseReviewThreads = (value: unknown) =>
+    buildReviewThreads(parseReviewThreadPage(value).threads);
 
   it("returns outdated flag, comment id, author, location and a 400 char body", () => {
     const [thread] = parseReviewThreads(response(node("T", "x".repeat(500))));
