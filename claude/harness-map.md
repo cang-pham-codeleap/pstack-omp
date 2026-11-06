@@ -7,7 +7,6 @@ pstack is installed as a Claude Code plugin. Its skills are written for omp (oh-
 - `skill://<name>` → Read `{{PSTACK_ROOT}}/skills/<name>/SKILL.md`. Use Read, not the Skill tool: most pstack skills set `disable-model-invocation`.
 - `skill://<name>/<path>` → `{{PSTACK_ROOT}}/skills/<name>/<path>`, e.g. `bun {{PSTACK_ROOT}}/skills/poteto-mode/scripts/watch-pr/cli.ts`, `node {{PSTACK_ROOT}}/skills/poteto-mode/scripts/check-plan.mjs <plan.md>`.
 - Relative paths inside a skill (`playbooks/x.md`, `references/y.md`) resolve from that skill's directory under `{{PSTACK_ROOT}}/skills/`.
-- `/skill:<name>` inside a prompt for an omp worker (the **omp-orchestrate** skill's tasks.json) → keep it literal. The omp worker expands it, not you.
 
 ## Tools
 - `read` / `edit` / `write` / `bash` / `grep` / `find` → `Read` / `Edit` / `Write` / `Bash` / `Grep` / `Glob`.
