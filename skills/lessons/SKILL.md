@@ -38,6 +38,7 @@ Run `match` at the step that would use the lesson. It prints one line per lesson
 
 - Before forming bug hypotheses: `match --kind root-cause --paths <files in the failing path> --tags <area>`.
 - Before the intake question round: `match --kind intake-gap --ticket-type <type>`. Each hit becomes a question or a recommended default in that round.
+- When no file or tag narrows it yet: `match --query "<task or symptom in a few words>"`. It ranks by BM25 over the lesson, prevent, and tags text, ignores diacritics, and drops lessons that share no word with the query, so the output is relevance-first instead of strongest-first. Filler words (English and Vietnamese function words, generic request verbs like fix, add, sửa, tạo) are dropped from the query, so a raw prompt matches only on its content words. Ranking is lexical and cannot cross languages: when the user prompts in another language than the lesson text, add `--tags` in that language too (`--tags "zalo,tin nhắn,message"`). The FTS5 index is built in memory from the JSONL stores on each call, so there is no index file to keep in sync. `--query` needs Node 22.13+ (`node:sqlite`) or Bun; every other command runs on any Node.
 
 A lesson is a hint, not evidence. It seeds a hypothesis or a question. It never replaces the repro, the runtime evidence, or the user's answer.
 

@@ -2,9 +2,12 @@
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+
+const require = createRequire(import.meta.url);
 
 export const KINDS = { 'root-cause': 'rc', 'intake-gap': 'ig', preference: 'pf' };
 const MAX_TEXT = 600;
@@ -39,6 +42,49 @@ export function similarity(a, b) {
   const [x, y] = [wordSet(normalizeLesson(a)), wordSet(normalizeLesson(b))];
   const shared = [...x].filter(w => y.has(w)).length;
   return x.size + y.size - shared ? shared / (x.size + y.size - shared) : 0;
+}
+
+function openMemoryDb() {
+  if (process.versions.bun) return new (require('bun:sqlite').Database)(':memory:');
+  // node:sqlite prints an ExperimentalWarning on load; a prompt hook would inject that stderr line.
+  const emit = process.emitWarning;
+  process.emitWarning = () => {};
+  try {
+    return new (require('node:sqlite').DatabaseSync)(':memory:');
+  } finally {
+    process.emitWarning = emit;
+  }
+}
+
+// Every query term is OR-ed, so one function word would match nearly every lesson.
+// Vietnamese entries keep their diacritics: "bạn" is filler, "bán" (sell) is not.
+const STOPWORDS = new Set(`
+a about above after again all also am an and any are as at be because been before being below between both but by
+can could did do does doing down during each few for from further had has have having he her here hers him his how
+i if in into is it its itself just me more most my no nor not now of off on once only or other our out over own
+please same she should so some such than that the their them then there these they this those through to too under
+until up very was we were what when where which while who whom why will with would you your yours
+help thanks ok okay hey fix add make update change create check run use get set want need try
+sửa thêm tạo làm cần muốn xem chạy dùng
+và của là có không được cho này với các những một để thì mà bị đã đang sẽ khi nào gì tôi bạn mình ở trong ra vào
+lại cũng như nhau rồi nhé giúp hãy vậy thế đó đây kia ạ nha nhá à ơi
+`.trim().split(/\s+/));
+
+// The JSONL stores stay the source of truth; the FTS5 index is rebuilt in memory per query, so it is never stale.
+export function rankByQuery(entries, query) {
+  const terms = [...new Set(normalizeLesson(query).split(' ').filter(t => t && !STOPWORDS.has(t)))];
+  if (!terms.length || !entries.length) return [];
+  const db = openMemoryDb();
+  try {
+    db.exec("CREATE VIRTUAL TABLE doc USING fts5(lesson, prevent, tags, tokenize = 'unicode61 remove_diacritics 2')");
+    const insert = db.prepare('INSERT INTO doc (rowid, lesson, prevent, tags) VALUES (?, ?, ?, ?)');
+    entries.forEach((e, i) => insert.run(i + 1, e.lesson, e.prevent ?? '', (e.match?.tags ?? []).join(' ')));
+    const rows = db.prepare('SELECT rowid FROM doc WHERE doc MATCH ? ORDER BY bm25(doc), rowid')
+      .all(terms.map(t => `"${t}"`).join(' OR '));
+    return rows.map(r => entries[Number(r.rowid) - 1]);
+  } finally {
+    db.close();
+  }
 }
 
 export function deriveStatus(entry) {
@@ -265,10 +311,11 @@ const commands = {
       }
       return true;
     };
-    const lessons = loadStores(ctx).flatMap(s => s.entries).filter(keep).sort((a, b) =>
+    const sorted = loadStores(ctx).flatMap(s => s.entries).filter(keep).sort((a, b) =>
       RANK[b.status] - RANK[a.status]
       || (b.helpful - b.harmful) - (a.helpful - a.harmful)
       || b.updated.localeCompare(a.updated));
+    const lessons = flags.query === undefined ? sorted : rankByQuery(sorted, flags.query);
     if (flags.json) return { enabled: true, lessons: lessons.slice(0, limit) };
     const max = flags['max-chars'] === undefined ? 1500 : Number(flags['max-chars']);
     if (!Number.isInteger(max) || max < 1) fail('--max-chars must be a positive integer');
@@ -325,8 +372,9 @@ const commands = {
       '  config',
       '  add --kind K --lesson TEXT --evidence TEXT [--prevent TEXT] [--scope project|global]',
       '      [--paths a,b] [--tags a,b] [--ticket-type T] [--section S]   (near-duplicates merge and upvote)',
-      '  match [--kind K] [--paths a,b] [--tags a,b] [--ticket-type T] [--section S]',
+      '  match [--kind K] [--paths a,b] [--tags a,b] [--ticket-type T] [--section S] [--query TEXT]',
       '        [--limit 5] [--max-chars 1500] [--json]   (text; empty output = nothing to apply)',
+      '        --query ranks by BM25 over lesson, prevent and tags (diacritics ignored) and drops lessons sharing no word',
       '  list [--status S] [--kind K] [--json]',
       '  vote <id> up|down [<id> up|down ...]   (all pairs validated before any write)',
       '  retire <id> --reason TEXT',
