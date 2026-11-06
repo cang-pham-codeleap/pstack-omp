@@ -40,7 +40,7 @@ When the `pstack-*` entries are missing and it matters, ask whether the user wan
 3. Run [`/skill:setup-pstack`](../setup-pstack/SKILL.md). It asks for a reasoning budget, maps a model to each role, and writes the `pstack-*` entries into the project's `.omp/config.yml` or `~/.omp/agent/config.yml`. It also asks about lesson memory and PR review, then offers once each to generate a verification skill and a formal verification skill for the project, unless the project already has one.
 4. Start a real task with `/skill:poteto-mode`, a goal, and a check that can pass or fail.
 
-Installing changes nothing until the user invokes a skill. Only `/skill:setup-pstack`, `/skill:omp-orchestrate`, and `/skill:ticket-intake` load from the user's words. The [README](../../README.md) and [guide page 1](../../docs/guide/01-setup.md) have the details. Offer to word their first prompt with them, per [`references/prompting.md`](references/prompting.md).
+Installing changes nothing until the user invokes a skill. Only `/skill:setup-pstack` and `/skill:ticket-intake` load from the user's words. The [README](../../README.md) and [guide page 1](../../docs/guide/01-setup.md) have the details. Offer to word their first prompt with them, per [`references/prompting.md`](references/prompting.md).
 
 If cost is the worry, say where the tokens go and how to spend fewer. pstack spends extra tokens on subagents and review panels. Rerun `/skill:setup-pstack` and pick a smaller budget or cheaper models. A role left unset runs on the session model, which saves tokens when the session runs on a cheaper model. Save `/skill:poteto-mode` for work that needs rigor.
 
@@ -74,7 +74,6 @@ The default answer is `/skill:poteto-mode`, which runs most of the others when i
 | Settle types and module shape before code that crosses a function boundary | [`/skill:architect`](../architect/SKILL.md) |
 | Get several attempts at one brief, merged into the best one | [`/skill:arena`](../arena/SKILL.md) |
 | Run parallel checks over slices, or race workers, as parallel subagents | [`/skill:swarm`](../swarm/SKILL.md) |
-| Run a task in separate omp workers on a model they name ("use omp with <model> on <provider>") | [`/skill:omp-orchestrate`](../omp-orchestrate/SKILL.md) |
 | Have different models review a diff and try to break it | [`/skill:interrogate`](../interrogate/SKILL.md) |
 | Fix a bug test-first when a cheap local test exists | [`/skill:tdd`](../tdd/SKILL.md) |
 | Apply TypeScript rules to `.ts` or `.tsx` work | [`/skill:typescript-best-practices`](../typescript-best-practices/SKILL.md) |
@@ -106,7 +105,7 @@ Close calls:
 - `/skill:interrogate` reviews the diff. `/skill:blast-radius` looks for breakage outside the diff and proves the one fact that makes the change safe.
 - `/skill:recall` rebuilds context across recent chats. `/skill:ketchup` covers only this chat since the user's last message. Resuming one specific chat or branch is the Session pickup playbook.
 - `/skill:figure-it-out` designs one rigorous run. The Orchestrate playbook runs a program that spans days and many PRs. The Autonomous run playbook drives one task to a finish condition.
-- `/skill:swarm` and `/skill:arena` run on pstack's role agents. `/skill:omp-orchestrate` runs separate omp processes on a model the user names, which no role carries.
+- `/skill:swarm` and `/skill:arena` run on pstack's role agents.
 
 Not in pstack:
 
@@ -141,7 +140,7 @@ Principles are one-rule skills that `/skill:poteto-mode` reads and cites in its 
 | `/skill:<name>` does nothing | Turn on `skills.enableSkillCommands`, or ask the agent to read `skill://<name>`. |
 | A new model choice had no effect | Check that the `pstack-*` entries landed in the config file `/skill:setup-pstack` named, then start a new session so the role agents pick them up. |
 | Runs cost more than expected | See the cost paragraph under Get set up. |
-| A skill didn't load on its own | Only `/skill:setup-pstack`, `/skill:omp-orchestrate`, and `/skill:ticket-intake` load from the user's words. The others load when the user types them or when `/skill:poteto-mode` runs them, and it doesn't run every skill. |
+| A skill didn't load on its own | Only `/skill:setup-pstack` and `/skill:ticket-intake` load from the user's words. The others load when the user types them or when `/skill:poteto-mode` runs them, and it doesn't run every skill. |
 | Parallel agents overwrote each other | Give each agent its own worktree, such as a `task` with `isolated: true`. |
 | An overnight run moved but finished nothing | The run needs a check that can pass or fail, not a duration. See [guide page 7](../../docs/guide/07-overnight.md). |
 | The reply claims success from a green build | Ask for the real command, flow, stored value, or profile. That's the prove-it-works principle. |
